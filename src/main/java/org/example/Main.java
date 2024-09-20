@@ -1,88 +1,157 @@
 package org.example;
-
-import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
-
+import io.vertx.core.*;
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.concurrent.TimeUnit;
 
-public class Main {
+public class Main
+{
+    public static void main(String[] args)
+    {
+        var vertx = Vertx.vertx(new VertxOptions().setMaxWorkerExecuteTime(1000000000000000000L));
 
-    public static void main(String[] args) {
-        Vertx vertx = Vertx.vertx();
-
-        WorkerExecutor executor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
+        var pingExecutor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
 
         long interval = 60000;
 
-        FileWriterService fileWriterService = new FileWriterService(vertx, "ping_logs");
+        var pingDataWriter = new PingDataWriter(vertx, "ping_logs");
 
-        PingService pingService = new FpingService(fileWriterService,interval,10);
+        var pingScheduler = new HostPingScheduler(pingDataWriter, interval, 10);
 
-        while (true) {
-            try {
+        var inputReader = new BufferedReader(new InputStreamReader(System.in));
 
-                BufferedReader inputReader = new BufferedReader(new InputStreamReader(System.in));
+        handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
 
-                System.out.print("Enter valid IP: ");
-
-                String ip = inputReader.readLine();
-
-                if (!IpValidator.isValidIp(ip)) {
-
-                    System.out.println("Invalid IP[" + ip + "]");
-
-                    continue;
-                }
-
-                if (isHostAlive(ip)) {
-
-                    System.out.println("Host[" + ip + "] is up.");
-
-                    System.out.print("Do you want to provision? [Y/N]: ");
-
-                    String provision = inputReader.readLine();
-
-                    if (provision.equalsIgnoreCase("y")) {
-
-                        pingService.ping(ip, vertx, executor);
-
-                    }
-                } else {
-
-                    System.out.println("Host[" + ip + "] is down.");
-
-                }
-            } catch (Exception exception) {
-                System.out.println("Error: " + exception.getMessage());
-            }
-        }
     }
 
-    private static boolean isHostAlive(String ip)
+    private static void handleProvisioning(Vertx vertx, WorkerExecutor pingExecutor, HostPingScheduler pingScheduler,
+                                           BufferedReader inputReader)
     {
+        vertx.executeBlocking(() ->
+        {
+            try
+            {
+                System.out.print("Enter valid IP: ");
 
-        String str = null;
+                return inputReader.readLine();
+            } catch (Exception e)
+            {
+                e.printStackTrace();
+
+                throw e;
+            }
+        }, false).onComplete(result ->
+        {
+            if (result.succeeded())
+            {
+                String ip = result.result();
+
+                if (!Utility.isValidIp(ip))
+                {
+                    System.out.println("Invalid IP[" + ip + "]");
+
+                    handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+
+                    return;
+                }
+                isHostAlive(pingExecutor, ip).onComplete(hostResult ->
+                {
+                    if (hostResult.succeeded() && hostResult.result())
+                    {
+                        System.out.println("Host[" + ip + "] is up.");
+
+                        vertx.executeBlocking(() ->
+                        {
+                            try
+                            {
+                                System.out.print("Do you want to provision? [Y/N]: ");
+
+                                return inputReader.readLine();
+                            } catch (Exception e)
+                            {
+                                e.printStackTrace();
+
+                                throw e;
+                            }
+                        }, false).onComplete(provisionResult ->
+                        {
+                            if (provisionResult.succeeded() && provisionResult.result().equalsIgnoreCase("y"))
+                            {
+                                String dirPath = "ping_logs/" + ip;
+
+                                Utility.createDirectoryIfDoesNotExist(vertx.fileSystem(), dirPath)
+                                        .onComplete(directoryResult ->
+                                        {
+                                            if (directoryResult.succeeded())
+                                            {
+                                                pingScheduler.ping(ip, vertx, pingExecutor);
+
+                                                System.out.println(ip + " scheduled for provisioning...");
+
+                                                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+                                            } else
+                                            {
+                                                System.out.println(
+                                                        "Failed to create or verify directory: " + directoryResult.cause()
+                                                                .getMessage());
+
+                                                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+                                            }
+                                        });
+                            }
+                        });
+                    } else
+                    {
+                        System.out.println("Host[" + ip + "] is down.");
+
+                        handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+                    }
+                });
+            } else
+            {
+                System.out.println("Error: " + result.cause().getMessage());
+
+                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+            }
+        });
+    }
+
+    private static Future<Boolean> isHostAlive(WorkerExecutor workerExecutor, String ip)
+    {
+        Promise<Boolean> pingPromise = Promise.promise();
         try
         {
+            System.out.println("checking if host is up...");
 
-            ProcessBuilder builder = new ProcessBuilder("fping", ip);
+            Utility.executeCommand(workerExecutor, "fping", "-c", "5", "-q", ip).onComplete(result ->
+            {
+                if (result.succeeded())
+                {
+                    String pingOutput = result.result();
 
-            Process process = builder.start();
+                    if (pingOutput.isEmpty())
+                        pingPromise.complete(false);
 
-            BufferedReader stdInput = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                    var packetLossMatcher = Utility.PING_OUTPUT_PATTERN.matcher(pingOutput);
 
-            str = null;
+                    if (packetLossMatcher.find())
+                    {
+                        var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
 
-            str = stdInput.readLine();
+                        if (packetLossPercent > 50)
+                            pingPromise.complete(false);
 
+                        pingPromise.complete(true);
+                    } else
+                    {
+                        pingPromise.complete(false);
+                    }
+                }
+            });
         } catch (Exception exception)
         {
-            System.out.println("Error: " + exception.getMessage());
-
+            pingPromise.fail(exception);
         }
-        return str.equals(ip + " is alive");
+        return pingPromise.future();
     }
 }
