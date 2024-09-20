@@ -21,7 +21,7 @@ public class Main
 
             var baseDir = "ping_logs";
 
-            var pingScheduler = new PingScheduler(interval, 10);
+            var pingScheduler = new PingScheduler(interval, 10, baseDir);
 
             var inputReader = new BufferedReader(new InputStreamReader(System.in));
 
@@ -51,15 +51,8 @@ public class Main
                         {
                             var path = baseDir + "/" + ip;
 
-                            if (!vertx.fileSystem().existsBlocking(path))
-                            {
-                                if (!vertx.fileSystem().mkdirBlocking(path).existsBlocking(path))
-                                {
-                                    System.out.println("could not provision...");
+                            System.out.println(ip + " provisioned successfully...");
 
-                                    continue;
-                                }
-                            }
                             pingScheduler.ping(ip);
                         }
                     } else
@@ -80,6 +73,7 @@ public class Main
     private static boolean isHostAlive(String ip)
     {
         System.out.println("Checking if host is up...");
+
         try
         {
             var pingOutput = Util.executeCommand("fping", "-c", "5", "-q", ip);
@@ -93,10 +87,7 @@ public class Main
             {
                 var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
 
-                if (packetLossPercent > 50)
-                    return false;
-
-                return true;
+                return packetLossPercent < 50;
             } else
             {
                 return false;

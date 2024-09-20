@@ -1,16 +1,11 @@
 package org.example;
 
-import io.vertx.core.Future;
-import io.vertx.core.Promise;
-import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.AsyncFile;
-import io.vertx.core.file.FileSystem;
 import io.vertx.core.file.OpenOptions;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -74,7 +69,7 @@ public class Util
 
     public static void writeToFile(String filename, Buffer data)
     {
-        Main.vertx.fileSystem().open(filename, new OpenOptions().setCreate(true)).onComplete(result ->
+        Main.vertx.fileSystem().open(filename, new OpenOptions().setCreate(true).setAppend(true)).onComplete(result ->
         {
             try
             {

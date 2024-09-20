@@ -1,10 +1,9 @@
 package org.example;
 
-import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class PingScheduler
 {
@@ -12,7 +11,7 @@ public class PingScheduler
 
     private static final long DEFAULT_INTERVAL = 60000;
 
-    private static String baseDir="";
+    private String baseDir = "";
 
     private long interval = DEFAULT_INTERVAL;
 
@@ -20,11 +19,13 @@ public class PingScheduler
 
     private StringBuilder pingData = new StringBuilder();
 
-    public PingScheduler(long interval, int noOfPackets)
+    public PingScheduler(long interval, int noOfPackets, String baseDir)
     {
         this.interval = interval;
 
         this.noOfPackets = noOfPackets;
+
+        this.baseDir = baseDir;
     }
 
     public void ping(String ip)
@@ -47,7 +48,8 @@ public class PingScheduler
 
                             if (!processedOutput.isEmpty())
                             {
-                                Util.writeToFile(baseDir + "/" + ip + "/" + LocalDateTime.now() + ".txt", Buffer.buffer(processedOutput));
+                                Util.writeToFile(baseDir + "/"  + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")) + ".txt",
+                                        Buffer.buffer("IP : " + ip + "\n" +  processedOutput));
                             }
                         }
                     }
@@ -82,7 +84,8 @@ public class PingScheduler
             }
         } catch (Exception exception)
         {
-            throw new RuntimeException(exception);
+            exception.printStackTrace();
+            return "";
         } finally
         {
             this.pingData.setLength(0);
