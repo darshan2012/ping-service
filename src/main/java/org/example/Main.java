@@ -1,156 +1,111 @@
 package org.example;
+
 import io.vertx.core.*;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.concurrent.TimeUnit;
 
 public class Main
 {
+    public static Vertx vertx = Vertx.vertx(new VertxOptions());
+
+    public static WorkerExecutor pingExecutor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
+            TimeUnit.MINUTES);
+
     public static void main(String[] args)
     {
-        var vertx = Vertx.vertx(new VertxOptions().setMaxWorkerExecuteTime(1000000000000000000L));
-
-        var pingExecutor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
-
-        var interval = 60000L;
-
-        var pingDataWriter = new PingDataWriter(vertx, "ping_logs");
-
-        var pingScheduler = new HostPingScheduler(pingDataWriter, interval, 10);
-
-        var inputReader = new BufferedReader(new InputStreamReader(System.in));
-
-        handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
-    }
-
-    private static void handleProvisioning(Vertx vertx, WorkerExecutor pingExecutor, HostPingScheduler pingScheduler,
-                                           BufferedReader inputReader)
-    {
-        vertx.executeBlocking(() ->
+        try
         {
-            try
-            {
-                System.out.print("Enter valid IP: ");
+            var interval = 60000L;
 
-                return inputReader.readLine();
-            } catch (Exception e)
-            {
-                e.printStackTrace();
+            var baseDir = "ping_logs";
 
-                throw e;
-            }
-        }, false).onComplete(result ->
-        {
-            if (result.succeeded())
-            {
-                var ip = result.result();
+            var pingScheduler = new PingScheduler(interval, 10);
 
-                if (!Utility.isValidIp(ip))
+            var inputReader = new BufferedReader(new InputStreamReader(System.in));
+
+            while (true)
+            {
+                try
                 {
-                    System.out.println("Invalid IP[" + ip + "]");
+                    System.out.print("Enter valid IP: ");
 
-                    handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
+                    String ip = inputReader.readLine();
 
-                    return;
-                }
-                isHostAlive(pingExecutor, ip).onComplete(hostResult ->
-                {
-                    if (hostResult.succeeded() && hostResult.result())
+                    if (!Util.isValidIp(ip))
+                    {
+                        System.out.println("Invalid IP[" + ip + "]");
+
+                        continue;
+                    }
+                    if (isHostAlive(ip))
                     {
                         System.out.println("Host[" + ip + "] is up.");
 
-                        vertx.executeBlocking(() ->
+                        System.out.print("Do you want to provision? [Y/N]: ");
+
+                        String provision = inputReader.readLine();
+
+                        if (provision.equalsIgnoreCase("y"))
                         {
-                            try
-                            {
-                                System.out.print("Do you want to provision? [Y/N]: ");
+                            var path = baseDir + "/" + ip;
 
-                                return inputReader.readLine();
-                            } catch (Exception e)
+                            if (!vertx.fileSystem().existsBlocking(path))
                             {
-                                e.printStackTrace();
+                                if (!vertx.fileSystem().mkdirBlocking(path).existsBlocking(path))
+                                {
+                                    System.out.println("could not provision...");
 
-                                throw e;
+                                    continue;
+                                }
                             }
-                        }, false).onComplete(provisionResult ->
-                        {
-                            if (provisionResult.succeeded() && provisionResult.result().equalsIgnoreCase("y"))
-                            {
-                                var dirPath = "ping_logs/" + ip;
-
-                                Utility.createDirectoryIfDoesNotExist(vertx.fileSystem(), dirPath)
-                                        .onComplete(directoryResult ->
-                                        {
-                                            if (directoryResult.succeeded())
-                                            {
-                                                pingScheduler.ping(ip, vertx, pingExecutor);
-
-                                                System.out.println(ip + " scheduled for provisioning...");
-
-                                                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
-                                            } else
-                                            {
-                                                System.out.println(
-                                                        "Failed to create or verify directory: " + directoryResult.cause()
-                                                                .getMessage());
-
-                                                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
-                                            }
-                                        });
-                            }
-                        });
+                            pingScheduler.ping(ip);
+                        }
                     } else
                     {
                         System.out.println("Host[" + ip + "] is down.");
-
-                        handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
                     }
-                });
-            } else
-            {
-                System.out.println("Error: " + result.cause().getMessage());
-
-                handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
-            }
-        });
-    }
-
-    private static Future<Boolean> isHostAlive(WorkerExecutor workerExecutor, String ip)
-    {
-        Promise<Boolean> pingPromise = Promise.promise();
-        try
-        {
-            System.out.println("checking if host is up...");
-
-            Utility.executeCommand(workerExecutor, "fping", "-c", "5", "-q", ip).onComplete(result ->
-            {
-                if (result.succeeded())
+                } catch (Exception exception)
                 {
-                    var pingOutput = result.result();
-
-                    if (pingOutput.isEmpty())
-                        pingPromise.complete(false);
-
-                    var packetLossMatcher = Utility.PING_OUTPUT_PATTERN.matcher(pingOutput);
-
-                    if (packetLossMatcher.find())
-                    {
-                        var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
-
-                        if (packetLossPercent > 50)
-                            pingPromise.complete(false);
-
-                        pingPromise.complete(true);
-                    } else
-                    {
-                        pingPromise.complete(false);
-                    }
+                    exception.printStackTrace();
                 }
-            });
+            }
         } catch (Exception exception)
         {
-            pingPromise.fail(exception);
+            exception.printStackTrace();
         }
-        return pingPromise.future();
+    }
+
+    private static boolean isHostAlive(String ip)
+    {
+        System.out.println("Checking if host is up...");
+        try
+        {
+            var pingOutput = Util.executeCommand("fping", "-c", "5", "-q", ip);
+
+            if (pingOutput.isEmpty())
+                return false;
+
+            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput);
+
+            if (packetLossMatcher.find())
+            {
+                var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
+
+                if (packetLossPercent > 50)
+                    return false;
+
+                return true;
+            } else
+            {
+                return false;
+            }
+        } catch (Exception exception)
+        {
+            System.out.println("Error: " + exception.getMessage());
+
+            return false;
+        }
     }
 }

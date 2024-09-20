@@ -2,14 +2,17 @@ package org.example;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.WorkerExecutor;
+import io.vertx.core.buffer.Buffer;
 
-public class HostPingScheduler
+import java.time.LocalDateTime;
+
+public class PingScheduler
 {
     private static final int DEFAULT_NO_OF_PACKETS = 10;
 
     private static final long DEFAULT_INTERVAL = 60000;
 
-    private PingDataWriter fileWriterService;
+    private static String baseDir="";
 
     private long interval = DEFAULT_INTERVAL;
 
@@ -17,37 +20,43 @@ public class HostPingScheduler
 
     private StringBuilder pingData = new StringBuilder();
 
-    public HostPingScheduler(PingDataWriter fileWriterService, long interval, int noOfPackets)
+    public PingScheduler(long interval, int noOfPackets)
     {
-        this.fileWriterService = fileWriterService;
-
         this.interval = interval;
 
         this.noOfPackets = noOfPackets;
     }
 
-    public void ping(String ip, Vertx vertx, WorkerExecutor workerExecutor)
+    public void ping(String ip)
     {
-        vertx.setPeriodic(interval, id ->
+        Main.vertx.setPeriodic(interval, id ->
         {
-            Utility.executeCommand(workerExecutor, "fping", "-c", String.valueOf(noOfPackets), "-q", ip)
-                    .onComplete(result ->
+            Main.pingExecutor.executeBlocking(() ->
+                    Util.executeCommand("fping", "-c", String.valueOf(noOfPackets), "-q", ip)
+            ).onComplete(pingResult ->
+            {
+                try
+                {
+                    if (pingResult.succeeded())
                     {
-                        if (result.succeeded())
+                        var pingOutput = pingResult.result();
+
+                        if (!pingOutput.isEmpty())
                         {
-                            var pingOutput = result.result();
+                            var processedOutput = processPingOutput(pingOutput);
 
-                            if (!pingOutput.isEmpty())
+                            if (!processedOutput.isEmpty())
                             {
-                                var processedOutput = processPingOutput(pingOutput);
-
-                                if (!processedOutput.isEmpty())
-                                {
-                                    fileWriterService.writeToFile(ip, processedOutput);
-                                }
+                                Util.writeToFile(baseDir + "/" + ip + "/" + LocalDateTime.now() + ".txt", Buffer.buffer(processedOutput));
                             }
                         }
-                    });
+                    }
+                } catch (Exception exception)
+                {
+                    exception.printStackTrace();
+                }
+
+            });
         });
     }
 
@@ -55,7 +64,7 @@ public class HostPingScheduler
     {
         try
         {
-            var packetMatcher = Utility.PING_OUTPUT_PATTERN.matcher(output);
+            var packetMatcher = Util.PING_OUTPUT_PATTERN.matcher(output);
 
             if (packetMatcher.find())
             {
@@ -71,6 +80,9 @@ public class HostPingScheduler
             {
                 return "";
             }
+        } catch (Exception exception)
+        {
+            throw new RuntimeException(exception);
         } finally
         {
             this.pingData.setLength(0);
