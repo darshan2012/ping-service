@@ -41,7 +41,6 @@ public class PingDataWriter
 
                     file.write(Buffer.buffer(data));
                 }
-
             } catch (Exception exception)
             {
                 System.out.println(exception.getMessage());

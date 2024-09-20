@@ -12,7 +12,7 @@ public class Main
 
         var pingExecutor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
 
-        long interval = 60000;
+        var interval = 60000L;
 
         var pingDataWriter = new PingDataWriter(vertx, "ping_logs");
 
@@ -21,7 +21,6 @@ public class Main
         var inputReader = new BufferedReader(new InputStreamReader(System.in));
 
         handleProvisioning(vertx, pingExecutor, pingScheduler, inputReader);
-
     }
 
     private static void handleProvisioning(Vertx vertx, WorkerExecutor pingExecutor, HostPingScheduler pingScheduler,
@@ -44,7 +43,7 @@ public class Main
         {
             if (result.succeeded())
             {
-                String ip = result.result();
+                var ip = result.result();
 
                 if (!Utility.isValidIp(ip))
                 {
@@ -77,7 +76,7 @@ public class Main
                         {
                             if (provisionResult.succeeded() && provisionResult.result().equalsIgnoreCase("y"))
                             {
-                                String dirPath = "ping_logs/" + ip;
+                                var dirPath = "ping_logs/" + ip;
 
                                 Utility.createDirectoryIfDoesNotExist(vertx.fileSystem(), dirPath)
                                         .onComplete(directoryResult ->
@@ -127,7 +126,7 @@ public class Main
             {
                 if (result.succeeded())
                 {
-                    String pingOutput = result.result();
+                    var pingOutput = result.result();
 
                     if (pingOutput.isEmpty())
                         pingPromise.complete(false);

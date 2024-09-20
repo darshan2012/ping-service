@@ -55,8 +55,6 @@ public class HostPingScheduler
     {
         try
         {
-            System.out.println("processPingOutput " + output);
-
             var packetMatcher = Utility.PING_OUTPUT_PATTERN.matcher(output);
 
             if (packetMatcher.find())
@@ -68,9 +66,7 @@ public class HostPingScheduler
                         .append("Average latency: ").append(packetMatcher.group(5)).append(" ms\n")
                         .append("Maximum latency: ").append(packetMatcher.group(6)).append(" ms\n");
 
-
                 return pingData.toString();
-
             } else
             {
                 return "";

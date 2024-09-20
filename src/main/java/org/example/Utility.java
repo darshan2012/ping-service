@@ -87,7 +87,6 @@ public class Utility
             });
 
             return pingPromise.future();
-
         } catch (Exception exception)
         {
             throw new RuntimeException(exception.getMessage());
