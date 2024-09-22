@@ -4,6 +4,7 @@ target/
 !**/src/test/**/target/
 
 /ping_logs
+/ping_data
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
