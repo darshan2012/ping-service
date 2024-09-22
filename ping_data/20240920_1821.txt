@@ -1,0 +1,42 @@
+IP : 10.20.40.177
+Packets transmitted: 10
+Packets received: 10
+Packet loss: 0%
+Minimum latency: 13.8 ms
+Average latency: 70.2 ms
+Maximum latency: 140 ms
+IP : 10.20.40.150
+Packets transmitted: 10
+Packets received: 10
+Packet loss: 0%
+Minimum latency: 0.02 ms
+Average latency: 0.05 ms
+Maximum latency: 0.07 ms
+IP : 10.20.40.249
+Packets transmitted: 10
+Packets received: 10
+Packet loss: 0%
+Minimum latency: 5.91 ms
+Average latency: 9.53 ms
+Maximum latency: 16.5 ms
+IP : 10.20.40.134
+Packets transmitted: 10
+Packets received: 1
+Packet loss: 90%
+Minimum latency: 103 ms
+Average latency: 103 ms
+Maximum latency: 103 ms
+IP : 10.20.40.246
+Packets transmitted: 10
+Packets received: 10
+Packet loss: 0%
+Minimum latency: 4.08 ms
+Average latency: 6.13 ms
+Maximum latency: 9.99 ms
+IP : 10.20.40.5
+Packets transmitted: 10
+Packets received: 10
+Packet loss: 0%
+Minimum latency: 1.14 ms
+Average latency: 2.18 ms
+Maximum latency: 2.97 ms
