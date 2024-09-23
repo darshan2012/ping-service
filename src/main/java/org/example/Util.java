@@ -51,10 +51,10 @@ public class Util
                 return "";
             }
 
-            String str;
-            while ((str = stdInput.readLine()) != null)
+            String outputLine;
+            while ((outputLine = stdInput.readLine()) != null)
             {
-                commandOutput.append(str).append("\n");
+                commandOutput.append(outputLine).append("\n");
             }
 
             stdInput.close();
@@ -77,7 +77,8 @@ public class Util
             {
                 if (result.succeeded())
                 {
-                    AsyncFile file = result.result();
+                    var file = result.result();
+
                     file.write(data).onComplete(writeResult ->
                     {
                         if (writeResult.succeeded())
@@ -106,5 +107,43 @@ public class Util
             }
         });
         return promise.future();
+    }
+
+    public static boolean isHostAlive(String ip)
+    {
+        try
+        {
+            var pingOutput = Util.executeCommand("fping", "-c", "5", "-q", ip);
+
+            if (pingOutput.isEmpty())
+            {
+                logger.warn("No response from host [{}].", ip);
+
+                return false;
+            }
+
+            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput);
+
+            if (packetLossMatcher.find())
+            {
+                var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
+
+                logger.debug("Packet loss for IP [{}] is {}%.", ip, packetLossPercent);
+
+                return packetLossPercent < 50;
+            }
+            else
+            {
+                logger.warn("No packet loss information for IP [{}].", ip);
+
+                return false;
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.error("Error while checking host [{}]: {}", ip, exception.getMessage());
+
+            return false;
+        }
     }
 }

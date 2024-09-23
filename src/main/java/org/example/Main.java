@@ -1,36 +1,116 @@
 package org.example;
 
+import event.FileStatusTracker;
 import event.ServerVerticle;
-import io.vertx.core.Vertx;
-import io.vertx.core.VertxOptions;
-import io.vertx.core.WorkerExecutor;
+import io.vertx.core.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 public class Main
 {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
-    public static Vertx vertx = Vertx.vertx(new VertxOptions());
-
-    public static WorkerExecutor pingExecutor = vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
-            TimeUnit.MINUTES);
+    public final static Vertx vertx = Vertx.vertx();
 
     public static void main(String[] args)
     {
         try
         {
-            var interval = 60000L;
+            vertx.fileSystem().readDir("ping_data", ".*\\.txt$").onComplete(dirResult -> {
+                try {
+                    if (dirResult.succeeded()) {
+                        List<String> files = dirResult.result();
+                        if (files == null || files.isEmpty()) {
+                            logger.warn("Directory is currently empty");
+                            return;
+                        }
 
-            var baseDir = "ping_logs";
+                        Collections.sort(files);
 
-            var pingScheduler = new PingScheduler(interval, 10, baseDir);
+                        String FILE_NAME_REGEX = ".*?(ping_data/.*\\.txt)$";
+                        Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
 
-            var inputReader = new BufferedReader(new InputStreamReader(System.in));
+                        System.out.println(files);
+                        for (String file : files) {
+
+                            var matcher = FILE_NAME_PATTERN.matcher(file);
+                            if (matcher.find()) {
+                                var extractedPath = matcher.group(1);
+                                FileStatusTracker.addFile(extractedPath);
+                                System.out.println(extractedPath);
+                            } else {
+                                logger.error("No match found for: " + file);
+                            }
+                        }
+                        logger.info("Files added to FileStatusTracker");
+                    } else {
+                        logger.error("Failed to read directory: " + dirResult.cause().getMessage());
+                    }
+                } catch (Exception exception) {
+                    logger.error(exception.getMessage(), exception);
+                }
+            });
+
+
+            vertx.deployVerticle(new PingScheduler())
+                    .compose(deployment ->
+                    {
+                        logger.info("PingScheduler deployed successfully.");
+                        new Thread(() ->
+                        {
+                            logger.info("new thread for ui started");
+                            var inputReader = new BufferedReader(new InputStreamReader(System.in));
+                            while (true)
+                            {
+                                try
+                                {
+                                    System.out.print("Enter valid IP: ");
+
+                                    var ip = inputReader.readLine();
+
+                                    if (!Util.isValidIp(ip))
+                                    {
+                                        System.out.println("Invalid IP: " + ip);
+
+                                        continue;
+                                    }
+                                    System.out.println("Checking if host [ " + ip + "] is up...");
+                                    if (Util.isHostAlive(ip))
+                                    {
+                                        System.out.println("Host [ " + ip + " ] is up.");
+
+                                        System.out.print("Do you want to provision? [Y/N]: ");
+
+                                        var provision = inputReader.readLine();
+
+                                        if (provision.equalsIgnoreCase("y"))
+                                        {
+                                            System.out.println("Provisioning started for IP: " + ip);
+                                            Main.vertx.eventBus().send("ping.address", ip);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        System.out.println("Host [ " + ip + "] is down.");
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    logger.error("Error occurred while processing input: ", exception);
+                                }
+                            }
+                        }).start();
+                        return Future.succeededFuture();
+                    });
+
 
             vertx.deployVerticle(new ServerVerticle(), deployment ->
             {
@@ -44,48 +124,6 @@ public class Main
                 }
             });
 
-            while (true)
-            {
-                try
-                {
-
-                    System.out.print("Enter valid IP: ");
-
-                    String ip = inputReader.readLine();
-
-                    if (!Util.isValidIp(ip))
-                    {
-                        logger.warn("Invalid IP: {}", ip);
-
-                        continue;
-                    }
-
-                    if (isHostAlive(ip))
-                    {
-                        logger.info("Host [{}] is up.", ip);
-
-                        System.out.print("Do you want to provision? [Y/N]: ");
-
-                        String provision = inputReader.readLine();
-
-                        if (provision.equalsIgnoreCase("y"))
-                        {
-
-                            logger.info("Provisioning started for IP: {}", ip);
-
-                            pingScheduler.ping(ip);
-                        }
-                    }
-                    else
-                    {
-                        logger.info("Host [{}] is down.", ip);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    logger.error("Error occurred while processing input: ", exception);
-                }
-            }
         }
         catch (Exception exception)
         {
@@ -93,42 +131,5 @@ public class Main
         }
     }
 
-    private static boolean isHostAlive(String ip)
-    {
-        logger.info("Checking if host [{}] is up...", ip);
-        try
-        {
-            String pingOutput = Util.executeCommand("fping", "-c", "5", "-q", ip);
 
-            if (pingOutput.isEmpty())
-            {
-                logger.warn("No response from host [{}].", ip);
-
-                return false;
-            }
-
-            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput);
-
-            if (packetLossMatcher.find())
-            {
-                int packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
-
-                logger.debug("Packet loss for IP [{}] is {}%.", ip, packetLossPercent);
-
-                return packetLossPercent < 50;
-            }
-            else
-            {
-                logger.warn("No packet loss information for IP [{}].", ip);
-
-                return false;
-            }
-        }
-        catch (Exception exception)
-        {
-            logger.error("Error while checking host [{}]: {}", ip, exception.getMessage());
-
-            return false;
-        }
-    }
 }

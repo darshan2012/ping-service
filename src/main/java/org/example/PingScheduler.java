@@ -1,115 +1,139 @@
 package org.example;
 
 import event.FileStatusTracker;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.TimeUnit;
 
-public class PingScheduler
+public class PingScheduler extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(PingScheduler.class);
 
     private static final DateTimeFormatter FILE_NAME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
 
-    private final String baseDir;
+    private final static String baseDir = "ping_data";
 
-    private final long interval;
+    private final static long interval = 60000;
 
-    private final int noOfPackets;
+    private final static int noOfPackets = 10;
 
-    public PingScheduler(long interval, int noOfPackets, String baseDir)
+    private final WorkerExecutor pingExecutor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
+            TimeUnit.MINUTES);
+
+    @Override
+    public void start() throws Exception
     {
-        this.interval = interval;
-        this.noOfPackets = noOfPackets;
-        this.baseDir = baseDir;
+        vertx.eventBus().localConsumer("ping.address", message ->
+        {
+            ping(message.body().toString());
+        });
     }
 
     public void ping(String ip)
     {
-        Main.vertx.setPeriodic(interval, id ->
+        vertx.setPeriodic(interval, id ->
         {
-            Main.pingExecutor.executeBlocking(
-                            () -> Util.executeCommand("fping", "-c", String.valueOf(noOfPackets), "-q", ip))
-                    .onComplete(pingResult ->
-                    {
-                        if (pingResult.succeeded())
+            try
+            {
+                pingExecutor.executeBlocking(
+                                () -> Util.executeCommand("fping", "-c", String.valueOf(noOfPackets), "-q", ip))
+                        .onComplete(pingResult ->
                         {
-                            var pingOutput = pingResult.result();
-
-                            if (!pingOutput.isEmpty())
+                            try
                             {
-                                String processedOutput = processPingOutput(pingOutput);
-
-                                if (!processedOutput.isEmpty())
+                                if (pingResult.succeeded())
                                 {
-                                    String fileName = baseDir + "/" + LocalDateTime.now()
-                                            .format(FILE_NAME_FORMATTER) + ".txt";
+                                    var pingOutput = pingResult.result();
 
-                                    logger.info("Writing ping results for IP [{}] to file [{}]", ip, fileName);
+                                    if (!pingOutput.isEmpty())
+                                    {
+                                        var processedOutput = processPingOutput(pingOutput);
 
-                                    Util.writeToFile(fileName, Buffer.buffer("IP: " + ip + "\n" + processedOutput))
-                                            .onComplete(fileWriteResult ->
-                                            {
-                                                try
-                                                {
-                                                    if (fileWriteResult.succeeded())
+                                        if (processedOutput != null && !processedOutput.isEmpty())
+                                        {
+                                            var fileName = baseDir + "/" + LocalDateTime.now()
+                                                    .format(FILE_NAME_FORMATTER) + ".txt";
+
+                                            logger.info("Writing ping results for IP [{}] to file [{}]", ip, fileName);
+
+                                            Util.writeToFile(fileName,
+                                                            Buffer.buffer(processedOutput.put("ip",ip).put("timestamp",LocalDateTime.now().toString()).encode() + "\n"))
+                                                    .onComplete(fileWriteResult ->
                                                     {
-                                                        FileStatusTracker.addFile(fileName);
-                                                        Main.vertx.eventBus().publisher("new-file").write(fileName);
-
-                                                    }
-                                                }
-                                                catch (Exception exception)
-                                                {
-                                                    logger.error(exception.getMessage(), exception);
-                                                }
-                                            });
+                                                        try
+                                                        {
+                                                            if (fileWriteResult.succeeded())
+                                                            {
+                                                                FileStatusTracker.addFile(fileName);
+                                                                //for later
+//                                                        Main.vertx.eventBus().publish("new-file", fileName);
+                                                            }
+                                                        }
+                                                        catch (Exception exception)
+                                                        {
+                                                            logger.error(exception.getMessage(), exception);
+                                                        }
+                                                    });
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    logger.error("Failed to execute ping for IP [{}]", ip, pingResult.cause());
                                 }
                             }
-                        }
-                        else
-                        {
-                            logger.error("Failed to execute ping for IP [{}]", ip, pingResult.cause());
-                        }
-                    });
+                            catch (Exception exception)
+                            {
+                                logger.error(exception.getMessage(), exception);
+                            }
+
+                        });
+            }
+            catch (Exception exception)
+            {
+                logger.error(exception.getMessage(), exception);
+            }
         });
     }
 
-    public String processPingOutput(String output)
+    public JsonObject processPingOutput(String output)
     {
-        var pingData = new StringBuilder();
         try
         {
             var packetMatcher = Util.PING_OUTPUT_PATTERN.matcher(output);
 
             if (packetMatcher.find())
             {
-                pingData.append("Packets transmitted: ").append(packetMatcher.group(1)).append("\n")
-                        .append("Packets received: ").append(packetMatcher.group(2)).append("\n")
-                        .append("Packet loss: ").append(packetMatcher.group(3)).append("%\n")
-                        .append("Minimum latency: ").append(packetMatcher.group(4)).append(" ms\n")
-                        .append("Average latency: ").append(packetMatcher.group(5)).append(" ms\n")
-                        .append("Maximum latency: ").append(packetMatcher.group(6)).append(" ms\n");
+                JsonObject pingData = new JsonObject().put("Packets transmitted", packetMatcher.group(1))
+                        .put("Packets received", packetMatcher.group(2))
+                        .put("Packet loss", packetMatcher.group(2))
+                        .put("Minimum latency", packetMatcher.group(2))
+                        .put("Average latency", packetMatcher.group(2))
+                        .put("Maximum latency", packetMatcher.group(2));
 
                 logger.debug("Processed ping output: {}", pingData.toString());
 
-                return pingData.toString();
+                return pingData;
             }
             else
             {
                 logger.warn("No valid ping output format found in [{}]", output);
 
-                return "";
+                return null;
             }
         }
         catch (Exception exception)
         {
             logger.error("Error processing ping output: ", exception);
 
-            return "";
+            return null;
         }
     }
 }

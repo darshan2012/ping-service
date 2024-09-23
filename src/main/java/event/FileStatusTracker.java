@@ -1,91 +1,73 @@
 package event;
 
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FileStatusTracker
 {
     // Map to store file names and read statuses for three applications.
     // ApplicationStatus holds the read status for Primary, Secondary, and Failure
-    private static final ConcurrentHashMap<String, ApplicationStatus> fileReadStatus = new ConcurrentHashMap<>();
-
-    //rethink about it later if this should be there or not
-    public static final List<String> files = new ArrayList<>();
+    private static final ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileReadStatus = new ConcurrentHashMap<>();
 
     public static void markFileAsRead(String fileName, ApplicationType appType)
     {
-        fileReadStatus.computeIfPresent(fileName, (key, status) ->
-        {
-            status.markAsRead(appType);
-            return status;
-        });
-    }
-
-    public static ApplicationStatus getFileReadStatus(String fileName)
-    {
-        return fileReadStatus.get(fileName);
+        fileReadStatus.get(fileName).put(appType, true);
     }
 
     public static boolean getFileReadStatus(String fileName, ApplicationType applicationType)
     {
-        return fileReadStatus.get(fileName).getStatus(applicationType);
+        try
+        {
+            var status = fileReadStatus.get(fileName).get(applicationType);
+
+            if (status == null)
+            {
+                fileReadStatus.get(fileName).put(applicationType, false);
+
+                return false;
+            }
+            return status;
+        }
+        catch (Exception exception)
+        {
+            return false;
+        }
     }
+
     public static void addFile(String fileName)
     {
-        fileReadStatus.computeIfAbsent(fileName, (filename) -> {
-            files.add(filename);
-            return new ApplicationStatus();
-        });
-
+        fileReadStatus.putIfAbsent(fileName, new HashMap<>());
     }
 
     public static boolean allAppsCompleted(String fileName)
     {
-        ApplicationStatus status = fileReadStatus.get(fileName);
-        return status != null && status.allRead();
-    }
+        var applicationstatus = fileReadStatus.get(fileName);
 
-    public static void removeFile(String fileName)
-    {
-        fileReadStatus.remove(fileName);
-    }
-
-    public static class ApplicationStatus
-    {
-        private boolean primaryRead = false;
-        private boolean secondaryRead = false;
-        private boolean failureRead = false;
-
-        public void markAsRead(ApplicationType applicationType)
+        if (ApplicationContextStore.getApplicationCount() != applicationstatus.size())
         {
-            switch (applicationType)
+            return false;
+        }
+        AtomicBoolean allAppsCompeted = new AtomicBoolean(true);
+
+        applicationstatus.forEach((applicationType, status) ->
+        {
+            if (!status)
             {
-                case PRIMARY -> primaryRead = true;
-                case SECONDARY -> secondaryRead = true;
-                case FAILURE -> failureRead = true;
+                allAppsCompeted.set(false);
             }
-        }
+        });
+        return false;
+    }
 
-        public boolean allRead()
+    public static Boolean removeFile(String fileName)
+    {
+        if (allAppsCompleted(fileName))
         {
-            return primaryRead && secondaryRead && failureRead;
-        }
+            fileReadStatus.remove(fileName);
 
-        public boolean getStatus(ApplicationType applicationType)
-        {
-            return switch (applicationType)
-            {
-                case PRIMARY -> this.primaryRead;
-                case SECONDARY -> this.secondaryRead;
-                case FAILURE -> this.failureRead;
-            };
+            return true;
         }
-
-        public boolean[] getStatus()
-        {
-            return new boolean[]{primaryRead, secondaryRead, failureRead};
-        }
+        return false;
     }
 }

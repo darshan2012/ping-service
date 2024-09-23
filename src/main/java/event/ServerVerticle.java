@@ -22,21 +22,24 @@ public class ServerVerticle extends AbstractVerticle
 
         logger.info("Starting HTTP server on port 8080...");
 
-        router.post("/connect").handler(BodyHandler.create()).handler(context ->
+        router.post("/register").handler(BodyHandler.create()).handler(context ->
         {
             try
             {
                 logger.info("Received a POST request to /connect");
 
                 var requestBody = context.body().asJsonObject();
-                String ip = requestBody.getString("ip");
-                int port = requestBody.getInteger("port");
-                String type = requestBody.getString("type");
-
-                if (ip == null || port <= 0 || type == null)
+                var ip = requestBody.getString("ip");
+                var port = requestBody.getInteger("port");
+                var type = requestBody.getString("type");
+                var pingPort = requestBody.getInteger("pingPort");
+                System.out.println(pingPort + port);
+                if (ip == null || port == null || type == null || pingPort == null)
                 {
                     logger.warn("Invalid application context: {}", requestBody);
+
                     context.response().setStatusCode(400).end("Invalid request parameters");
+
                     return;
                 }
 
@@ -45,16 +48,17 @@ public class ServerVerticle extends AbstractVerticle
                     applicationType = ApplicationType.valueOf(type.toUpperCase());
                 } catch (IllegalArgumentException e) {
                     logger.warn("Invalid application type: {}", type);
+
                     context.response().setStatusCode(400).end("Invalid application type");
+
                     return;
                 }
 
                 logger.info("Application context received: {}", requestBody);
 
-                ApplicationContextStore.setAppContext(applicationType, ip, port);
+                ApplicationContextStore.setAppContext(applicationType, ip, port, pingPort);
 
-                vertx.deployVerticle(new EventSenderVerticle(),
-                        new DeploymentOptions().setConfig(new JsonObject().put("type", type)),
+                vertx.deployVerticle(new EventSenderVerticle(applicationType),
                         deployResult ->
                         {
                             if (deployResult.succeeded())
@@ -69,6 +73,7 @@ public class ServerVerticle extends AbstractVerticle
                         });
 
                 context.response().setStatusCode(200).end("Context set successfully, app will start sending data");
+
                 logger.info("Response sent: Context set successfully");
             }
             catch (Exception exception)
