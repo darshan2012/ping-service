@@ -23,8 +23,8 @@ import java.util.stream.Collectors;
 public class EventSenderVerticle extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(EventSenderVerticle.class);
-    private static final int EVENT_INTERVAL = 60000 * 5; // 5 minutes
-    private static final int MAX_EVENTS = 100; // 100 events in 5 minutes
+    private static final int EVENT_INTERVAL = 60000 ; // 5 minutes
+    private static final int MAX_EVENTS = 10; // 100 events in 5 minutes
     private static final int PING_INTERVAL = 1000; // Ping every 1 seconds
     private static final int PING_TIMEOUT = 1000; // 1 seconds timeout for pong
 
@@ -167,13 +167,19 @@ public class EventSenderVerticle extends AbstractVerticle
 
                     if (isReceivingAppConnected)
                     {
-                        AtomicInteger eventsSent = new AtomicInteger(0); // Wrap the counter in AtomicInteger
+                        var eventsSent = new AtomicInteger(0); // Wrap the counter in AtomicInteger
 
                         processNextFile(eventsSent);
                     }
                     else
                     {
                         logger.warn("Receiver is disconnected, stopping event sending.");
+                        vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
+                            if (result.succeeded())
+                            {
+                                logger.info("EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
+                            }
+                        });
                     }
                 }
                 catch (Exception exception)
@@ -196,7 +202,7 @@ public class EventSenderVerticle extends AbstractVerticle
             if (!fileQueue.isEmpty() && eventsSent.get() < MAX_EVENTS)
             {
 
-                String currentFile = fileQueue.peek();
+                var currentFile = fileQueue.peek();
 
                 if (currentFile != null)
                 {
@@ -220,7 +226,7 @@ public class EventSenderVerticle extends AbstractVerticle
                 {
                     var asyncFile = fileResult.result();
 
-                    Buffer buffer = Buffer.buffer();
+                    var buffer = Buffer.buffer();
 
                     final int[] currentOffset = {applicationContext.getInteger("offset",
                             0)}; // Start from the saved offset
@@ -249,7 +255,10 @@ public class EventSenderVerticle extends AbstractVerticle
                                 {
                                     // If event limit is reached, store the current file and offset
                                     applicationContext.put("currentFile", fileName).put("offset", currentOffset[0]);
-                                    break; // Stop processing further lines
+
+                                    return;
+//                                    break; // Stop processing further lines
+
                                 }
                             }
                         }
@@ -262,22 +271,22 @@ public class EventSenderVerticle extends AbstractVerticle
                     {
                         try
                         {
-                            logger.info("Completed reading file: " + fileName);
-
                             asyncFile.close();
                             if (eventsSent.get() >= MAX_EVENTS)
                             {
-                                // We've hit the event limit, store file and offset
+                                logger.info("completed sending " + MAX_EVENTS + " events to " + applicationType.toString());
+                                // hit the event limit, store file and offset
                                 applicationContext.put("currentFile", fileName).put("offset", currentOffset[0]);
                             }
                             else
                             {
-                                // We've finished reading the file, mark it as done and remove it from the queue
+                                logger.info("Completed reading file: " + fileName);
+                                // finished reading the file, mark it as done and remove it from the queue
                                 FileStatusTracker.markFileAsRead(fileName, applicationType);
-
 
                                 if (FileStatusTracker.allAppsCompleted(fileName))
                                 {
+                                    logger.info("Deleting file " + fileName);
                                     vertx.fileSystem().delete(fileName).onComplete(fileDeleteResult ->
                                     {
                                         if (fileDeleteResult.succeeded())
@@ -326,18 +335,26 @@ public class EventSenderVerticle extends AbstractVerticle
     {
         try
         {
-            JsonObject json = new JsonObject(line);
+            var json = new JsonObject(line);
 
             // Check if the receiving application is connected before sending
             if (isReceivingAppConnected)
             {
                 pushSocket.send(json.encode());
-                logger.info("Sent JSON event: {}", json.encodePrettily());
+
+                logger.info("Sent JSON event: {}", json.encode());
+
                 return true; // Event successfully sent
             }
             else
             {
                 logger.warn("Receiver is disconnected. Stopping event sending.");
+                vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
+                    if (result.succeeded())
+                    {
+                        logger.info("EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
+                    }
+                });
                 return false;
             }
         }
@@ -351,20 +368,21 @@ public class EventSenderVerticle extends AbstractVerticle
     private void startPingPongCheck() {
         try {
             pingSocket.connect("tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
-            logger.info("Connected to ping socket at tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
 
+            logger.info("Connected to ping socket at tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
 
             poller.register(pingSocket, ZMQ.Poller.POLLIN);
 
             vertx.setPeriodic(PING_INTERVAL, id -> {
                 try
                 {
-                    pingSocket.send("ping");  // Send ping request
+                    pingSocket.send("ping");
 
-                    int pollResult = poller.poll(PING_TIMEOUT);  // Wait for 2 seconds for pong
+                    var pollResult = poller.poll(PING_TIMEOUT);
+
                     if (pollResult > 0 && poller.pollin(0))
                     {
-                        String pong = pingSocket.recvStr();
+                        var pong = pingSocket.recvStr();
                         if ("pong".equals(pong))
                         {
                             logger.info("Connection is alive.");
@@ -377,7 +395,9 @@ public class EventSenderVerticle extends AbstractVerticle
                     else
                     {
                         System.out.println("No response from PULL socket, stopping tasks...");
+
                         isReceivingAppConnected = false;
+
                         vertx.cancelTimer(id);  // Stop sending tasks if disconnected
                     }
                 }
