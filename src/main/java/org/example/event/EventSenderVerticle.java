@@ -1,6 +1,7 @@
-package event;
+package org.example.event;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonObject;
@@ -16,9 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class EventSenderVerticle extends AbstractVerticle
 {
@@ -60,12 +59,6 @@ public class EventSenderVerticle extends AbstractVerticle
         try
         {
             initializeFileQueue();
-
-            //case where after initializing the file if the new file is added
-//            vertx.eventBus().localConsumer("ping.new-file", file ->
-//            {
-//                fileQueue.add(file.body().toString());
-//            });
         }
         catch (Exception exception)
         {
@@ -82,9 +75,23 @@ public class EventSenderVerticle extends AbstractVerticle
             {
                 if (dirResult.succeeded())
                 {
-                    processDirectoryResults(dirResult.result());
+                    processDirectoryResults(dirResult.result()).compose(context -> {
 
+                        try
+                        {
+                            startPingPongCheck();
 
+                            startPeriodicProcessing();
+
+                            return Future.succeededFuture();
+                        }
+                        catch (Exception exception)
+                        {
+                            logger.error(exception.getMessage(),exception);
+
+                            return Future.failedFuture(exception);
+                        }
+                    });
                 }
                 else
                 {
@@ -98,7 +105,7 @@ public class EventSenderVerticle extends AbstractVerticle
         });
     }
 
-    private void processDirectoryResults(List<String> files)
+    private Future processDirectoryResults(List<String> files)
     {
         try
         {
@@ -107,7 +114,8 @@ public class EventSenderVerticle extends AbstractVerticle
             if (files == null || files.isEmpty())
             {
                 logger.warn("directory is currently empty");
-                return;
+
+                return Future.succeededFuture();
             }
             if (applicationContext.getString("currentFile") == null || applicationContext.getString("currentFile")
                     .isEmpty())
@@ -137,13 +145,14 @@ public class EventSenderVerticle extends AbstractVerticle
                     logger.error("No match found for: " + file);
                 }
             }
-            startPingPongCheck();
+            return Future.succeededFuture();
 
-            startPeriodicProcessing();
         }
         catch (Exception exception)
         {
             logger.error("Error while processing the read directory result: ", exception);
+
+            return Future.failedFuture("Error while reading directory");
         }
     }
 
@@ -174,6 +183,7 @@ public class EventSenderVerticle extends AbstractVerticle
                     else
                     {
                         logger.warn("Receiver is disconnected, stopping event sending.");
+
                         vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
                             if (result.succeeded())
                             {
@@ -201,7 +211,6 @@ public class EventSenderVerticle extends AbstractVerticle
         {
             if (!fileQueue.isEmpty() && eventsSent.get() < MAX_EVENTS)
             {
-
                 var currentFile = fileQueue.peek();
 
                 if (currentFile != null)
@@ -229,9 +238,9 @@ public class EventSenderVerticle extends AbstractVerticle
                     var buffer = Buffer.buffer();
 
                     final int[] currentOffset = {applicationContext.getInteger("offset",
-                            0)}; // Start from the saved offset
+                            0)};
 
-                    asyncFile.setReadPos(currentOffset[0]); // Set the starting read position
+                    asyncFile.setReadPos(currentOffset[0]);
 
                     asyncFile.handler(fileBuffer ->
                     {
@@ -247,9 +256,9 @@ public class EventSenderVerticle extends AbstractVerticle
                             {
                                 if (eventsSent.get() < MAX_EVENTS && processLineAndSend(line))
                                 {
-                                    eventsSent.incrementAndGet(); // Increment safely within the lambda
+                                    eventsSent.incrementAndGet();
 
-                                    currentOffset[0] += line.length() + 1; // Update offset (accounting for newline)
+                                    currentOffset[0] += line.length() + 1;
                                 }
                                 else
                                 {
@@ -257,8 +266,6 @@ public class EventSenderVerticle extends AbstractVerticle
                                     applicationContext.put("currentFile", fileName).put("offset", currentOffset[0]);
 
                                     return;
-//                                    break; // Stop processing further lines
-
                                 }
                             }
                         }
@@ -281,12 +288,16 @@ public class EventSenderVerticle extends AbstractVerticle
                             else
                             {
                                 logger.info("Completed reading file: " + fileName);
+
                                 // finished reading the file, mark it as done and remove it from the queue
                                 FileStatusTracker.markFileAsRead(fileName, applicationType);
 
                                 if (FileStatusTracker.allAppsCompleted(fileName))
                                 {
                                     logger.info("Deleting file " + fileName);
+
+                                    FileStatusTracker.removeFile(fileName);
+
                                     vertx.fileSystem().delete(fileName).onComplete(fileDeleteResult ->
                                     {
                                         if (fileDeleteResult.succeeded())
@@ -344,11 +355,12 @@ public class EventSenderVerticle extends AbstractVerticle
 
                 logger.info("Sent JSON event: {}", json.encode());
 
-                return true; // Event successfully sent
+                return true;
             }
             else
             {
                 logger.warn("Receiver is disconnected. Stopping event sending.");
+
                 vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
                     if (result.succeeded())
                     {
@@ -361,6 +373,7 @@ public class EventSenderVerticle extends AbstractVerticle
         catch (Exception e)
         {
             logger.error("Failed to process line as JSON: {}", line, e);
+
             return false; // Failed to send the event
         }
     }
@@ -409,26 +422,6 @@ public class EventSenderVerticle extends AbstractVerticle
                 {
                     logger.error(exception.getMessage(),exception);
                 }
-//                if (isReceivingAppConnected) {
-//                    pingSocket.send("ping");
-//                    logger.info("Sent ping");
-//                }
-//                // Poll for responses
-//                int rc = poller.poll(PING_TIMEOUT);
-//                if (rc > 0) {
-//                    if (poller.pollin(0)) {
-//                        var response = pingSocket.recv(ZMQ.DONTWAIT);
-//                        if (response != null && response.equals("pong")) {
-//                            logger.info("Received pong response. Receiver is connected.");
-//                        } else {
-//                            logger.warn("No pong response. Receiver might be disconnected.");
-//                            isReceivingAppConnected = false;
-//                        }
-//                    }
-//                } else {
-//                    logger.warn("Ping response timeout. Receiver might be disconnected.");
-//                    isReceivingAppConnected = false;
-//                }
             });
         } catch (Exception exception) {
             logger.error("Error while setting up ping-pong check: ", exception);

@@ -1,6 +1,6 @@
 package org.example;
 
-import event.FileStatusTracker;
+import org.example.event.FileStatusTracker;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
@@ -20,9 +20,9 @@ public class PingScheduler extends AbstractVerticle
 
     private final static String baseDir = "ping_data";
 
-    private final static long interval = 60000;
+    private final static long INTERVAL = 60000;
 
-    private final static int noOfPackets = 10;
+    private final static int NO_OF_PACKETS = 10;
 
     private final WorkerExecutor pingExecutor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
             TimeUnit.MINUTES);
@@ -38,12 +38,12 @@ public class PingScheduler extends AbstractVerticle
 
     public void ping(String ip)
     {
-        vertx.setPeriodic(interval, id ->
+        vertx.setPeriodic(INTERVAL, id ->
         {
             try
             {
                 pingExecutor.executeBlocking(
-                                () -> Util.executeCommand("fping", "-c", String.valueOf(noOfPackets), "-q", ip))
+                                () -> Util.executeCommand("fping", "-c", String.valueOf(NO_OF_PACKETS), "-q", ip))
                         .onComplete(pingResult ->
                         {
                             try
@@ -72,8 +72,6 @@ public class PingScheduler extends AbstractVerticle
                                                             if (fileWriteResult.succeeded())
                                                             {
                                                                 FileStatusTracker.addFile(fileName);
-                                                                //for later
-//                                                        Main.vertx.eventBus().publish("new-file", fileName);
                                                             }
                                                         }
                                                         catch (Exception exception)

@@ -17,6 +17,8 @@ public class Util
 {
     private static final Logger logger = LoggerFactory.getLogger(Util.class);
 
+    private final static String NEW_LINE_CHAR = "\n"
+
     private final static String IP_V4_REGEX = "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$";
     private final static String IP_V6_REGEX = "^([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)$";
 
@@ -41,28 +43,39 @@ public class Util
         try
         {
             var processBuilder = new ProcessBuilder(commands);
+
             var process = processBuilder.start();
+
             var stdInput = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+
             var commandOutput = new StringBuilder();
 
             if (!process.waitFor(PROCESS_TIMEOUT, TimeUnit.SECONDS))
             {
-                process.destroy();
+                process.destroyForcibly();
+
                 return "";
             }
 
             String outputLine;
+
             while ((outputLine = stdInput.readLine()) != null)
             {
-                commandOutput.append(outputLine).append("\n");
+                commandOutput.append(outputLine).append(NEW_LINE_CHAR);
             }
 
-            stdInput.close();
+            process.getInputStream().close();
+
+            process.getErrorStream().close();
+
+            process.getOutputStream().close();
+
             return commandOutput.toString();
         }
         catch (Exception exception)
         {
             logger.error("Error executing command: {}", String.join(" ", commands), exception);
+
             throw new RuntimeException("Error executing command: " + String.join(" ", commands), exception);
         }
     }

@@ -1,17 +1,15 @@
 package org.example;
 
-import event.FileStatusTracker;
-import event.ServerVerticle;
+import org.example.event.FileStatusTracker;
+import org.example.event.ServerVerticle;
 import io.vertx.core.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class Main
@@ -24,12 +22,18 @@ public class Main
     {
         try
         {
-            vertx.fileSystem().readDir("ping_data", ".*\\.txt$").onComplete(dirResult -> {
-                try {
-                    if (dirResult.succeeded()) {
+            vertx.fileSystem().readDir("ping_data", ".*\\.txt$").onComplete(dirResult ->
+            {
+                try
+                {
+                    if (dirResult.succeeded())
+                    {
                         List<String> files = dirResult.result();
-                        if (files == null || files.isEmpty()) {
+
+                        if (files == null || files.isEmpty())
+                        {
                             logger.warn("Directory is currently empty");
+
                             return;
                         }
 
@@ -39,22 +43,30 @@ public class Main
                         Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
 
                         System.out.println(files);
-                        for (String file : files) {
+                        for (String file : files)
+                        {
 
                             var matcher = FILE_NAME_PATTERN.matcher(file);
-                            if (matcher.find()) {
+                            if (matcher.find())
+                            {
                                 var extractedPath = matcher.group(1);
                                 FileStatusTracker.addFile(extractedPath);
                                 System.out.println(extractedPath);
-                            } else {
+                            }
+                            else
+                            {
                                 logger.error("No match found for: " + file);
                             }
                         }
                         logger.info("Files added to FileStatusTracker");
-                    } else {
+                    }
+                    else
+                    {
                         logger.error("Failed to read directory: " + dirResult.cause().getMessage());
                     }
-                } catch (Exception exception) {
+                }
+                catch (Exception exception)
+                {
                     logger.error(exception.getMessage(), exception);
                 }
             });
@@ -94,6 +106,7 @@ public class Main
                                         if (provision.equalsIgnoreCase("y"))
                                         {
                                             System.out.println("Provisioning started for IP: " + ip);
+
                                             Main.vertx.eventBus().send("ping.address", ip);
                                         }
                                     }

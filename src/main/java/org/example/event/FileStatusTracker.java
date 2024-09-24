@@ -1,4 +1,4 @@
-package event;
+package org.example.event;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +12,13 @@ public class FileStatusTracker
     // Map to store file names and read statuses for three applications.
     // ApplicationStatus holds the read status for Primary, Secondary, and Failure
     private static final ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileReadStatus = new ConcurrentHashMap<>();
+
     private static final Logger logger = LoggerFactory.getLogger(FileStatusTracker.class);
 
     public static void markFileAsRead(String fileName, ApplicationType appType)
     {
         logger.info("fileReadStatus : " + fileReadStatus.get(fileName));
+
         fileReadStatus.get(fileName).put(appType, true);
     }
 

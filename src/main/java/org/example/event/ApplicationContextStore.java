@@ -1,4 +1,4 @@
-package event;
+package org.example.event;
 
 import io.vertx.core.json.JsonObject;
 

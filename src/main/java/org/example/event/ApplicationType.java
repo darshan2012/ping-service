@@ -1,4 +1,4 @@
-package event;
+package org.example.event;
 
 public enum ApplicationType
 {
