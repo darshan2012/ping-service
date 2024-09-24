@@ -1,15 +1,18 @@
-package org.example.event;
+package org.example.apiServer;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import org.example.event.ApplicationType;
+import org.example.event.EventSender;
+import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ServerVerticle extends AbstractVerticle
+public class HTTPServer extends AbstractVerticle
 {
-    private static final Logger logger = LoggerFactory.getLogger(ServerVerticle.class);
+    private static final Logger logger = LoggerFactory.getLogger(HTTPServer.class);
 
     @Override
     public void start() throws Exception
@@ -27,11 +30,17 @@ public class ServerVerticle extends AbstractVerticle
                 logger.info("Received a POST request to /connect");
 
                 var requestBody = context.body().asJsonObject();
+
                 var ip = requestBody.getString("ip");
+
                 var port = requestBody.getInteger("port");
+
                 var type = requestBody.getString("type");
+
                 var pingPort = requestBody.getInteger("pingPort");
+
                 System.out.println(pingPort + port);
+
                 if (ip == null || port == null || type == null || pingPort == null)
                 {
                     logger.warn("Invalid application context: {}", requestBody);
@@ -42,9 +51,13 @@ public class ServerVerticle extends AbstractVerticle
                 }
 
                 ApplicationType applicationType;
-                try {
+
+                try
+                {
                     applicationType = ApplicationType.valueOf(type.toUpperCase());
-                } catch (IllegalArgumentException e) {
+                }
+                catch (IllegalArgumentException e)
+                {
                     logger.warn("Invalid application type: {}", type);
 
                     context.response().setStatusCode(400).end("Invalid application type");
@@ -56,7 +69,7 @@ public class ServerVerticle extends AbstractVerticle
 
                 ApplicationContextStore.setAppContext(applicationType, ip, port, pingPort);
 
-                vertx.deployVerticle(new EventSenderVerticle(applicationType),
+                vertx.deployVerticle(new EventSender(applicationType),
                         deployResult ->
                         {
                             if (deployResult.succeeded())

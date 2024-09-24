@@ -17,7 +17,7 @@ public class Util
 {
     private static final Logger logger = LoggerFactory.getLogger(Util.class);
 
-    private final static String NEW_LINE_CHAR = "\n"
+    private final static String NEW_LINE_CHAR = "\n";
 
     private final static String IP_V4_REGEX = "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$";
     private final static String IP_V6_REGEX = "^([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)$";
@@ -27,6 +27,8 @@ public class Util
 
     private final static Pattern IP_V4_PATTERN = Pattern.compile(IP_V4_REGEX);
     private final static Pattern IP_V6_PATTERN = Pattern.compile(IP_V6_REGEX);
+
+    private static StringBuilder commandOutput = new StringBuilder();
 
     private final static long PROCESS_TIMEOUT = 20; // 20 seconds
 
@@ -47,8 +49,6 @@ public class Util
             var process = processBuilder.start();
 
             var stdInput = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-
-            var commandOutput = new StringBuilder();
 
             if (!process.waitFor(PROCESS_TIMEOUT, TimeUnit.SECONDS))
             {
@@ -78,13 +78,17 @@ public class Util
 
             throw new RuntimeException("Error executing command: " + String.join(" ", commands), exception);
         }
+        finally
+        {
+            commandOutput.setLength(0);
+        }
     }
 
     public static Future<Boolean> writeToFile(String filename, Buffer data)
     {
         Promise<Boolean> promise = Promise.promise();
 
-        Main.vertx.fileSystem().open(filename, new OpenOptions().setCreate(true).setAppend(true)).onComplete(result ->
+        Main.vertx.fileSystem().open(filename, new OpenOptions().setAppend(true)).onComplete(result ->
         {
             try
             {
@@ -97,12 +101,15 @@ public class Util
                         if (writeResult.succeeded())
                         {
                             promise.complete(true);
+
                             file.close();
+
                             logger.info("Successfully wrote data to file: {}", filename);
                         }
                         else
                         {
                             promise.complete(false);
+
                             logger.error("Error writing to file: {}", filename, writeResult.cause());
                         }
                     });
@@ -110,13 +117,15 @@ public class Util
                 else
                 {
                     promise.complete(false);
+
                     logger.error("Failed to open file: {}", filename, result.cause());
                 }
             }
             catch (Exception exception)
             {
                 promise.complete(false);
-                logger.error(exception.getMessage(),exception);
+
+                logger.error(exception.getMessage(), exception);
             }
         });
         return promise.future();

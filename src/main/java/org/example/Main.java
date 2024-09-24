@@ -1,8 +1,10 @@
 package org.example;
 
-import org.example.event.FileStatusTracker;
-import org.example.event.ServerVerticle;
 import io.vertx.core.*;
+import org.example.apiServer.HTTPServer;
+import org.example.cache.FileStatusTracker;
+import org.example.poller.PingScheduler;
+import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,120 +24,139 @@ public class Main
     {
         try
         {
-            vertx.fileSystem().readDir("ping_data", ".*\\.txt$").onComplete(dirResult ->
-            {
-                try
-                {
-                    if (dirResult.succeeded())
+            ApplicationContextStore.loadContextFromFile()
+                    .compose(result ->
                     {
-                        List<String> files = dirResult.result();
-
-                        if (files == null || files.isEmpty())
+                        return FileStatusTracker.loadStatusFromFile();
+                    })
+                    .compose(result ->
+                    {
+                        vertx.deployVerticle(new HTTPServer(), deployment ->
                         {
-                            logger.warn("Directory is currently empty");
-
-                            return;
-                        }
-
-                        Collections.sort(files);
-
-                        String FILE_NAME_REGEX = ".*?(ping_data/.*\\.txt)$";
-                        Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
-
-                        System.out.println(files);
-                        for (String file : files)
-                        {
-
-                            var matcher = FILE_NAME_PATTERN.matcher(file);
-                            if (matcher.find())
+                            if (deployment.succeeded())
                             {
-                                var extractedPath = matcher.group(1);
-                                FileStatusTracker.addFile(extractedPath);
-                                System.out.println(extractedPath);
+//                                FileStatusTracker.writeStatusToFile();
+
+//                                ApplicationContextStore.writeContextToFile();
+
+                                logger.info("HTTPSever deployed successfully.");
                             }
                             else
                             {
-                                logger.error("No match found for: " + file);
+                                logger.error("Failed to deploy HTTPSever", deployment.cause());
                             }
-                        }
-                        logger.info("Files added to FileStatusTracker");
-                    }
-                    else
-                    {
-                        logger.error("Failed to read directory: " + dirResult.cause().getMessage());
-                    }
-                }
-                catch (Exception exception)
-                {
-                    logger.error(exception.getMessage(), exception);
-                }
-            });
+                        });
 
-
-            vertx.deployVerticle(new PingScheduler())
-                    .compose(deployment ->
+                        return Future.succeededFuture();
+                    }).compose(result ->
                     {
-                        logger.info("PingScheduler deployed successfully.");
-                        new Thread(() ->
-                        {
-                            logger.info("new thread for ui started");
-                            var inputReader = new BufferedReader(new InputStreamReader(System.in));
-                            while (true)
-                            {
-                                try
+                        vertx.deployVerticle(new PingScheduler())
+                                .compose(deployment ->
                                 {
-                                    System.out.print("Enter valid IP: ");
-
-                                    var ip = inputReader.readLine();
-
-                                    if (!Util.isValidIp(ip))
+                                    logger.info("PingScheduler deployed successfully.");
+                                    new Thread(() ->
                                     {
-                                        System.out.println("Invalid IP: " + ip);
-
-                                        continue;
-                                    }
-                                    System.out.println("Checking if host [ " + ip + "] is up...");
-                                    if (Util.isHostAlive(ip))
-                                    {
-                                        System.out.println("Host [ " + ip + " ] is up.");
-
-                                        System.out.print("Do you want to provision? [Y/N]: ");
-
-                                        var provision = inputReader.readLine();
-
-                                        if (provision.equalsIgnoreCase("y"))
+                                        logger.info("new thread for ui started");
+                                        var inputReader = new BufferedReader(new InputStreamReader(System.in));
+                                        while (true)
                                         {
-                                            System.out.println("Provisioning started for IP: " + ip);
+                                            try
+                                            {
+                                                System.out.print("Enter valid IP: ");
 
-                                            Main.vertx.eventBus().send("ping.address", ip);
+                                                var ip = inputReader.readLine();
+
+                                                if (!Util.isValidIp(ip))
+                                                {
+                                                    System.out.println("Invalid IP: " + ip);
+
+                                                    continue;
+                                                }
+                                                System.out.println("Checking if host [ " + ip + "] is up...");
+                                                if (Util.isHostAlive(ip))
+                                                {
+                                                    System.out.println("Host [ " + ip + " ] is up.");
+
+                                                    System.out.print("Do you want to provision? [Y/N]: ");
+
+                                                    var provision = inputReader.readLine();
+
+                                                    if (provision.equalsIgnoreCase("y"))
+                                                    {
+                                                        System.out.println("Provisioning started for IP: " + ip);
+
+                                                        Main.vertx.eventBus().send("object.provision", ip);
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    System.out.println("Host [ " + ip + "] is down.");
+                                                }
+                                            }
+                                            catch (Exception exception)
+                                            {
+                                                logger.error("Error occurred while processing input: ", exception);
+                                            }
                                         }
-                                    }
-                                    else
-                                    {
-                                        System.out.println("Host [ " + ip + "] is down.");
-                                    }
-                                }
-                                catch (Exception exception)
-                                {
-                                    logger.error("Error occurred while processing input: ", exception);
-                                }
-                            }
-                        }).start();
+                                    }).start();
+                                    return Future.succeededFuture();
+                                });
                         return Future.succeededFuture();
                     });
 
-
-            vertx.deployVerticle(new ServerVerticle(), deployment ->
-            {
-                if (deployment.succeeded())
-                {
-                    logger.info("SeverVerticle deployed successfully.");
-                }
-                else
-                {
-                    logger.error("Failed to deploy SeverVerticle", deployment.cause());
-                }
-            });
+//            Thread.sleep(5000);
+//            vertx.fileSystem().readDir("data", ".*\\.txt$").onComplete(dirResult ->
+//            {
+//                try
+//                {
+//                    if (dirResult.succeeded())
+//                    {
+//                        List<String> files = dirResult.result();
+//
+//                        if (files == null || files.isEmpty())
+//                        {
+//                            logger.warn("Directory is currently empty");
+//
+//                            return;
+//                        }
+//
+//                        Collections.sort(files);
+//
+//                        String FILE_NAME_REGEX = ".*?(data/.*\\.txt)$";
+//
+//                        Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
+//
+//                        System.out.println(files);
+//
+//                        for (String file : files)
+//                        {
+//
+//                            var matcher = FILE_NAME_PATTERN.matcher(file);
+//                            if (matcher.find())
+//                            {
+//                                var extractedPath = matcher.group(1);
+//                                FileStatusTracker.addFile(extractedPath);
+//                                System.out.println(extractedPath);
+//                            }
+//                            else
+//                            {
+//                                logger.error("No match found for: " + file);
+//                            }
+//                        }
+//                        logger.info("Files added to FileStatusTracker");
+//
+//                        FileStatusTracker.writeStatusToFile();
+//                    }
+//                    else
+//                    {
+//                        logger.error("Failed to read directory: " + dirResult.cause().getMessage());
+//                    }
+//                }
+//                catch (Exception exception)
+//                {
+//                    logger.error(exception.getMessage(), exception);
+//                }
+//            });
 
         }
         catch (Exception exception)

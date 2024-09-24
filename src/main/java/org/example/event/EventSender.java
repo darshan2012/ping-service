@@ -5,12 +5,13 @@ import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonObject;
+import org.example.cache.FileStatusTracker;
+import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.zeromq.SocketType;
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
-import org.zeromq.ZMQException;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
@@ -19,16 +20,15 @@ import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
-public class EventSenderVerticle extends AbstractVerticle
+public class EventSender extends AbstractVerticle
 {
-    private static final Logger logger = LoggerFactory.getLogger(EventSenderVerticle.class);
+    private static final Logger logger = LoggerFactory.getLogger(EventSender.class);
     private static final int EVENT_INTERVAL = 60000 ; // 5 minutes
     private static final int MAX_EVENTS = 10; // 100 events in 5 minutes
-    private static final int PING_INTERVAL = 1000; // Ping every 1 seconds
-    private static final int PING_TIMEOUT = 1000; // 1 seconds timeout for pong
+    private static final int PING_INTERVAL = 3000; // Ping every 3 seconds
+    private static final int PING_TIMEOUT = 5000;
 
-
-    private final static String FILE_NAME_REGEX = ".*?(ping_data/.*\\.txt)$";
+    private final static String FILE_NAME_REGEX = ".*?(data/.*\\.txt)$";
     private final static Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
 
     private ApplicationType applicationType;
@@ -36,17 +36,15 @@ public class EventSenderVerticle extends AbstractVerticle
 
     private final static ZContext context = new ZContext();
     private ZMQ.Socket pushSocket = context.createSocket(SocketType.PUSH);
-    private ZMQ.Socket pingSocket = context.createSocket(SocketType.REQ);
+    private ZMQ.Socket pingSocket = context.createSocket(SocketType.PULL);
 
     private ZMQ.Poller poller = context.createPoller(1);
 
-    private boolean isReceivingAppConnected = true;
+    private long timeStamp = System.currentTimeMillis();
 
-
-    //think later if this should be moved to appcontext or keep it here
     private Queue<String> fileQueue = new ArrayDeque<>();
 
-    public EventSenderVerticle(ApplicationType applicationType)
+    public EventSender(ApplicationType applicationType)
     {
         this.applicationType = applicationType;
 
@@ -69,25 +67,25 @@ public class EventSenderVerticle extends AbstractVerticle
     private void initializeFileQueue()
     {
         //later change directory path in variable
-        vertx.fileSystem().readDir("ping_data", ".*\\.txt$").onComplete(dirResult ->
+        vertx.fileSystem().readDir("data/", ".*\\.txt$").onComplete(dirResult ->
         {
             try
             {
                 if (dirResult.succeeded())
                 {
-                    processDirectoryResults(dirResult.result()).compose(context -> {
-
+                    processDirectoryResults(dirResult.result()).compose(context ->
+                    {
                         try
                         {
-                            startPingPongCheck();
+                            checkIsAlive();
 
-                            startPeriodicProcessing();
+                            startProcessings();
 
                             return Future.succeededFuture();
                         }
                         catch (Exception exception)
                         {
-                            logger.error(exception.getMessage(),exception);
+                            logger.error(exception.getMessage(), exception);
 
                             return Future.failedFuture(exception);
                         }
@@ -134,7 +132,7 @@ public class EventSenderVerticle extends AbstractVerticle
 
                     //another way to do this can be matchint with currentfile
                     //check if the file is already read by the application and if it is then dont add it to queue
-                    if (FileStatusTracker.getFileReadStatus(extractedPath, applicationType))
+                    if (FileStatusTracker.getFileStatus(extractedPath, applicationType))
                     {
                         continue;
                     }
@@ -156,7 +154,7 @@ public class EventSenderVerticle extends AbstractVerticle
         }
     }
 
-    private void startPeriodicProcessing()
+    private void startProcessings()
     {
         try
         {
@@ -174,20 +172,22 @@ public class EventSenderVerticle extends AbstractVerticle
                 {
                     logger.info("periodic event sending started for " + applicationType.toString());
 
-                    if (isReceivingAppConnected)
+                    if (isAlive())
                     {
-                        var eventsSent = new AtomicInteger(0); // Wrap the counter in AtomicInteger
+                        var events = new AtomicInteger(0); // Wrap the counter in AtomicInteger
 
-                        processNextFile(eventsSent);
+                        processNextFile(events);
                     }
                     else
                     {
                         logger.warn("Receiver is disconnected, stopping event sending.");
 
-                        vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
+                        vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result ->
+                        {
                             if (result.succeeded())
                             {
-                                logger.info("EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
+                                logger.info(
+                                        "EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
                             }
                         });
                     }
@@ -205,17 +205,17 @@ public class EventSenderVerticle extends AbstractVerticle
         }
     }
 
-    private void processNextFile(AtomicInteger eventsSent)
+    private void processNextFile(AtomicInteger events)
     {
         try
         {
-            if (!fileQueue.isEmpty() && eventsSent.get() < MAX_EVENTS)
+            if (!fileQueue.isEmpty() && events.get() < MAX_EVENTS)
             {
                 var currentFile = fileQueue.peek();
 
                 if (currentFile != null)
                 {
-                    readAndSendEventsFromFile(currentFile, eventsSent);
+                    read(currentFile, events);
                 }
             }
         }
@@ -225,7 +225,7 @@ public class EventSenderVerticle extends AbstractVerticle
         }
     }
 
-    private void readAndSendEventsFromFile(String fileName, AtomicInteger eventsSent)
+    private void read(String fileName, AtomicInteger events)
     {
         vertx.fileSystem().open(fileName, new OpenOptions().setRead(true)).onComplete(fileResult ->
         {
@@ -233,14 +233,16 @@ public class EventSenderVerticle extends AbstractVerticle
             {
                 if (fileResult.succeeded())
                 {
+                    pushSocket.send("filename " + fileName);
+
                     var asyncFile = fileResult.result();
 
                     var buffer = Buffer.buffer();
 
-                    final int[] currentOffset = {applicationContext.getInteger("offset",
-                            0)};
+                    AtomicInteger currentOffset = new AtomicInteger( applicationContext.getInteger("offset",
+                            0));
 
-                    asyncFile.setReadPos(currentOffset[0]);
+                    asyncFile.setReadPos(currentOffset.get());
 
                     asyncFile.handler(fileBuffer ->
                     {
@@ -254,16 +256,16 @@ public class EventSenderVerticle extends AbstractVerticle
 
                             for (String line : lines)
                             {
-                                if (eventsSent.get() < MAX_EVENTS && processLineAndSend(line))
+                                if (events.get() < MAX_EVENTS && send(line))
                                 {
-                                    eventsSent.incrementAndGet();
+                                    events.incrementAndGet();
 
-                                    currentOffset[0] += line.length() + 1;
+                                    currentOffset.addAndGet(line.length() + 1);
                                 }
                                 else
                                 {
                                     // If event limit is reached, store the current file and offset
-                                    applicationContext.put("currentFile", fileName).put("offset", currentOffset[0]);
+                                    applicationContext.put("currentFile", fileName).put("offset", currentOffset.get());
 
                                     return;
                                 }
@@ -271,7 +273,7 @@ public class EventSenderVerticle extends AbstractVerticle
                         }
                         catch (Exception exception)
                         {
-                            logger.error(exception.getMessage(),exception);
+                            logger.error(exception.getMessage(), exception);
                         }
 
                     }).endHandler(v ->
@@ -279,11 +281,13 @@ public class EventSenderVerticle extends AbstractVerticle
                         try
                         {
                             asyncFile.close();
-                            if (eventsSent.get() >= MAX_EVENTS)
+
+                            if (events.get() >= MAX_EVENTS)
                             {
-                                logger.info("completed sending " + MAX_EVENTS + " events to " + applicationType.toString());
+                                logger.info(
+                                        "completed sending " + MAX_EVENTS + " events to " + applicationType.toString());
                                 // hit the event limit, store file and offset
-                                applicationContext.put("currentFile", fileName).put("offset", currentOffset[0]);
+                                applicationContext.put("currentFile", fileName).put("offset", currentOffset.get());
                             }
                             else
                             {
@@ -292,7 +296,7 @@ public class EventSenderVerticle extends AbstractVerticle
                                 // finished reading the file, mark it as done and remove it from the queue
                                 FileStatusTracker.markFileAsRead(fileName, applicationType);
 
-                                if (FileStatusTracker.allAppsCompleted(fileName))
+                                if (FileStatusTracker.readByAllApps(fileName))
                                 {
                                     logger.info("Deleting file " + fileName);
 
@@ -310,16 +314,16 @@ public class EventSenderVerticle extends AbstractVerticle
                                         }
                                     });
                                 }
-                                fileQueue.poll(); // Remove from queue
+                                fileQueue.poll();
 
                                 applicationContext.put("currentFile", fileName).put("offset", 0);
 
-                                processNextFile(eventsSent); // Continue processing the next file in the queue
+                                processNextFile(events);
                             }
                         }
                         catch (Exception exception)
                         {
-                            logger.error(exception.getMessage(),exception);
+                            logger.error(exception.getMessage(), exception);
                         }
                     }).exceptionHandler(error ->
                     {
@@ -341,15 +345,14 @@ public class EventSenderVerticle extends AbstractVerticle
         });
     }
 
-
-    private boolean processLineAndSend(String line)
+    private boolean send(String line)
     {
         try
         {
             var json = new JsonObject(line);
 
             // Check if the receiving application is connected before sending
-            if (isReceivingAppConnected)
+            if (isAlive())
             {
                 pushSocket.send(json.encode());
 
@@ -361,81 +364,74 @@ public class EventSenderVerticle extends AbstractVerticle
             {
                 logger.warn("Receiver is disconnected. Stopping event sending.");
 
-                vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result -> {
+                vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result ->
+                {
                     if (result.succeeded())
                     {
-                        logger.info("EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
+                        logger.info(
+                                "EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
                     }
                 });
                 return false;
             }
         }
-        catch (Exception e)
+        catch (Exception exception)
         {
-            logger.error("Failed to process line as JSON: {}", line, e);
+            logger.error("Failed to process line as JSON: {}", line, exception);
 
-            return false; // Failed to send the event
+            return false;
         }
     }
 
-    private void startPingPongCheck() {
-        try {
-            pingSocket.connect("tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
+    private void checkIsAlive()
+    {
+        try
+        {
+            pingSocket.connect(
+                    "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
 
-            logger.info("Connected to ping socket at tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
+            logger.info("Connected to ping socket at tcp://" + applicationContext.getString(
+                    "ip") + ":" + applicationContext.getInteger("pingPort"));
 
-            poller.register(pingSocket, ZMQ.Poller.POLLIN);
-
-            vertx.setPeriodic(PING_INTERVAL, id -> {
+            vertx.setPeriodic(PING_INTERVAL, id ->{
                 try
                 {
-                    pingSocket.send("ping");
+                    var pong = pingSocket.recvStr();
 
-                    var pollResult = poller.poll(PING_TIMEOUT);
-
-                    if (pollResult > 0 && poller.pollin(0))
+                    if ("pong".equals(pong))
                     {
-                        var pong = pingSocket.recvStr();
-                        if ("pong".equals(pong))
-                        {
-                            logger.info("Connection is alive.");
-                        }
-                        else
-                        {
-                            System.out.println("Unexpected response: " + pong);
-                        }
+                        timeStamp = System.currentTimeMillis();
                     }
                     else
                     {
-                        System.out.println("No response from PULL socket, stopping tasks...");
-
-                        isReceivingAppConnected = false;
-
-                        vertx.cancelTimer(id);  // Stop sending tasks if disconnected
+                        logger.error("Unexpected response: " + pong);
                     }
-                }
-                catch (ZMQException zmqException)
-                {
-                    System.out.println("ZeroMQ Error: " + zmqException.getMessage());
                 }
                 catch (Exception exception)
                 {
                     logger.error(exception.getMessage(),exception);
                 }
             });
-        } catch (Exception exception) {
+        }
+        catch (Exception exception)
+        {
             logger.error("Error while setting up ping-pong check: ", exception);
         }
     }
 
+private boolean isAlive()
+{
+    return System.currentTimeMillis() - timeStamp <= PING_TIMEOUT;
+}
 
-    @Override
-    public void stop() throws Exception
+
+@Override
+public void stop() throws Exception
+{
+    if (pushSocket != null)
     {
-        if (pushSocket != null)
-        {
-            pushSocket.close();
-        }
-        super.stop();
+        pushSocket.close();
     }
+    super.stop();
+}
 }

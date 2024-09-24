@@ -8,6 +8,7 @@ import io.vertx.core.parsetools.JsonParser;
 import org.zeromq.ZContext;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,10 +19,22 @@ public class Main
     public static void main(String[] args)
     {
         Vertx vertx = Vertx.vertx();
+        System.out.println(Instant.now().getEpochSecond());
+        Long time = System.currentTimeMillis();
+        System.out.println(time);
+        try
+        {
+            Thread.sleep(1000);
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
+        }
+        System.out.println(System.currentTimeMillis() - time);
 
-       vertx.deployVerticle(new JsonFileReaderVerticle());
-
-
+//        String str = "Hello I'm your String";
+//        String[] splited = str.split("\\s+");
+//        System.out.println(splited[0] + splited[1]);
 //        HashMap<String,Integer> m = new HashMap<>();
 //        m.put("a",10);
 //        var a = m.get("b");
