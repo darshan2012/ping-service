@@ -1,4 +1,4 @@
-package org.example.Server;
+package org.example.server;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.http.HttpServer;

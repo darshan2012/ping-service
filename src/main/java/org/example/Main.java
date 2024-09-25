@@ -1,7 +1,7 @@
 package org.example;
 
 import io.vertx.core.*;
-import org.example.Server.HTTPServer;
+import org.example.server.HTTPServer;
 import org.example.cache.FileStatusTracker;
 import org.example.poller.PingScheduler;
 import org.example.store.ApplicationContextStore;

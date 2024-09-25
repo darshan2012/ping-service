@@ -115,7 +115,6 @@ public class FileStatusTracker
 
                         ReadStream<Buffer> readStream = file;
 
-                        // Read the file buffer asynchronously
                         readStream.handler(totalBuffer::appendBuffer);
 
                         readStream.endHandler(v ->

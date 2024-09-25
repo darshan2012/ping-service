@@ -4,6 +4,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
+import org.example.Constants;
 import org.example.Main;
 import org.example.Util;
 import org.example.Constants.ApplicationType;
@@ -21,7 +22,7 @@ public class ApplicationContextStore
 
     private static final Map<ApplicationType, JsonObject> contexts = new HashMap<>();
 
-    private final static String FILE_PATH = "data/data/context.txt";
+    private final static String FILE_PATH = Constants.BASE_DIR + "/data/context.txt";
 
     public static JsonObject getAppContext(ApplicationType applicationType)
     {
@@ -50,15 +51,15 @@ public class ApplicationContextStore
             {
                 Util.createFileIfNotExist(FILE_PATH);
 
-                JsonObject mapAsJson = new JsonObject();
+                JsonObject context = new JsonObject();
 
                 for (Map.Entry<ApplicationType, JsonObject> entry : contexts.entrySet())
                 {
-                    mapAsJson.put(entry.getKey().toString(),
+                    context.put(entry.getKey().toString(),
                             entry.getValue()); // Key: ApplicationType, Value: JsonObject
                 }
 
-                Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(mapAsJson.encodePrettily()), result ->
+                Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(context.encodePrettily()), result ->
                 {
                     if (result.succeeded())
                     {

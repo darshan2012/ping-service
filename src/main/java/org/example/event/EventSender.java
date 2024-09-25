@@ -194,15 +194,6 @@ public class EventSender extends AbstractVerticle
                     else
                     {
                         logger.warn("Receiver is disconnected, stopping event sending.");
-
-                        vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result ->
-                        {
-                            if (result.succeeded())
-                            {
-                                logger.info(
-                                        "EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
-                            }
-                        });
                     }
                 }
                 catch (Exception exception)

@@ -1,8 +1,10 @@
 package org.example;
 
+import java.io.Serializable;
+
 public class Constants
 {
-    public enum ApplicationType
+    public enum ApplicationType implements Serializable
     {
         PRIMARY, SECONDARY, FAILOVER
     }
