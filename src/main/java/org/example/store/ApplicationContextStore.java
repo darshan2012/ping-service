@@ -22,7 +22,7 @@ public class ApplicationContextStore
 
     private static final Map<ApplicationType, JsonObject> contexts = new HashMap<>();
 
-    private final static String FILE_PATH = Constants.CURRENT_DIR +"/" + Constants.BASE_DIR + "/data/context.txt";
+    private final static String FILE_PATH = Constants.BASE_DIR + "/data/context.txt";
 
     public static JsonObject getAppContext(ApplicationType applicationType)
     {
@@ -98,41 +98,49 @@ public class ApplicationContextStore
         {
             Main.vertx.fileSystem().readFile(FILE_PATH, result ->
             {
-                if (result.succeeded())
+                try
                 {
-                    try
+                    if (result.succeeded())
                     {
-                        if (result.result().toString().isEmpty())
+                        try
                         {
-                            promise.complete();
+                            if (result.result().toString().isEmpty())
+                            {
+                                promise.complete();
 
-                            return;
+                                return;
+                            }
+
+                            JsonObject fileContent = result.result().toJsonObject();
+
+                            contexts.clear();
+
+                            for (String key : fileContent.fieldNames())
+                            {
+                                contexts.put(ApplicationType.valueOf(key), fileContent.getJsonObject(key));
+                            }
+
+                            logger.info("Contexts successfully read from file.");
+
+                            future.complete();
                         }
-                        JsonObject fileContent = result.result().toJsonObject();
-
-                        contexts.clear();
-
-                        for (String key : fileContent.fieldNames())
+                        catch (Exception e)
                         {
-                            contexts.put(ApplicationType.valueOf(key), fileContent.getJsonObject(key));
+                            logger.error("Error while reading contexts from file: ", e);
+
+                            future.fail(e);
                         }
-
-                        logger.info("Contexts successfully read from file.");
-
-                        future.complete();
                     }
-                    catch (Exception e)
+                    else
                     {
-                        logger.error("Error while reading contexts from file: ", e);
+                        logger.error("Failed to read file: ", result.cause());
 
-                        future.fail(e);
+                        future.fail(result.cause());
                     }
                 }
-                else
+                catch (Exception exception)
                 {
-                    logger.error("Failed to read file: ", result.cause());
-
-                    future.fail(result.cause());
+                    logger.error("Error while reading file {}", FILE_PATH);
                 }
             });
         }, false, promise);

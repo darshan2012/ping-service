@@ -82,6 +82,7 @@ public class HTTPServer extends AbstractVerticle
                                     if (deployResult.succeeded())
                                     {
                                         deployedApplications.put(applicationType, deployResult.result());
+
                                         logger.info("EventSenderVerticle deployed successfully with deployment ID: {}",
                                                 deployResult.result());
                                     }
@@ -108,13 +109,15 @@ public class HTTPServer extends AbstractVerticle
             {
                 if (http.succeeded())
                 {
-                    startPromise.complete();
                     logger.info("HTTP server started successfully on port " + http.result().actualPort());
+
+                    startPromise.complete();
                 }
                 else
                 {
-                    startPromise.fail(http.cause());
                     logger.error("Failed to start HTTP server", http.cause());
+
+                    startPromise.fail(http.cause());
                 }
             });
         }

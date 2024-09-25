@@ -4,7 +4,8 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.OpenOptions;
-import io.vertx.core.streams.ReadStream;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import org.example.Constants;
 import org.example.Main;
 import org.example.Constants.ApplicationType;
@@ -12,27 +13,33 @@ import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FileStatusTracker
 {
     // Map to store file names and read statuses for three applications.
     // ApplicationStatus holds the read status for Primary, Secondary, and Failure
-    private static final ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileStatuses = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Set<ApplicationType>> fileStatuses = new ConcurrentHashMap<>();
 
-    private static final String FILE_PATH = Constants.CURRENT_DIR + "/" + Constants.BASE_DIR + "/data/filestatuses.txt";
+    private static final String FILE_PATH = Constants.BASE_DIR + "/data/filestatuses.txt";
 
     private static final Logger logger = LoggerFactory.getLogger(FileStatusTracker.class);
 
     public static void markFileAsRead(String fileName, ApplicationType appType)
     {
-        logger.info("fileReadStatus : " + fileStatuses.get(fileName));
-
-        if(fileStatuses.get(fileName) != null)
-            fileStatuses.get(fileName).put(appType, true);
+        try
+        {
+            if (fileStatuses.get(fileName) != null)
+            {
+                fileStatuses.get(fileName).remove(appType);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.error("Error while removing the file from fileStatuses", exception);
+        }
     }
 
     public static boolean getFileStatus(String fileName, ApplicationType applicationType)
@@ -43,12 +50,7 @@ public class FileStatusTracker
             {
                 return true;
             }
-            var status = fileStatuses.get(fileName).get(applicationType);
-
-            if (status == null)
-                return true;
-
-            return status;
+            return fileStatuses.get(fileName).contains(applicationType);
         }
         catch (Exception exception)
         {
@@ -58,31 +60,15 @@ public class FileStatusTracker
 
     public static void addFile(String fileName)
     {
-        HashMap<ApplicationType, Boolean> appsWithStatus = new HashMap<>();
-
-        var applications = ApplicationContextStore.getApplications();
-
-        for (var app : applications)
-        {
-            appsWithStatus.put(app, false);
-        }
-
-        fileStatuses.putIfAbsent(fileName, appsWithStatus);
+        fileStatuses.putIfAbsent(fileName, ApplicationContextStore.getApplications());
     }
 
     public static boolean readByAllApps(String fileName)
     {
-        AtomicBoolean allAppsCompeted = new AtomicBoolean(true);
+        if (fileStatuses.get(fileName) != null)
+            return fileStatuses.get(fileName).isEmpty();
 
-        fileStatuses.get(fileName).forEach((applicationType, status) ->
-        {
-            if (!status)
-            {
-                allAppsCompeted.set(false);
-            }
-        });
-
-        return allAppsCompeted.get();
+        return true;
     }
 
     public static boolean removeFile(String fileName)
@@ -99,100 +85,90 @@ public class FileStatusTracker
     public static Future<Void> read()
     {
         Promise<Void> promise = Promise.promise();
-
-        Main.vertx.fileSystem().exists(FILE_PATH, existResult ->
+        try
         {
-            try
+            Main.vertx.executeBlocking(promiseHandler ->
             {
-                if (existResult.succeeded() && existResult.result())
+                Main.vertx.fileSystem().exists(FILE_PATH).onComplete(result ->
                 {
-                    var options = new OpenOptions().setRead(true);
-
-                    Main.vertx.fileSystem().open(FILE_PATH, options, openResult ->
+                    if (result.succeeded() && result.result())
                     {
-                        if (openResult.succeeded())
+                        Main.vertx.fileSystem().open(FILE_PATH, new OpenOptions().setRead(true)).onComplete(openFile ->
                         {
-                            var file = openResult.result();
-
-                            var totalBuffer = Buffer.buffer();
-
-                            ReadStream<Buffer> readStream = file;
-
-                            readStream.handler(totalBuffer::appendBuffer);
-
-                            readStream.endHandler(v ->
+                            if (openFile.succeeded())
                             {
-                                try
+                                var file = openFile.result();
+
+                                file.handler(buffer ->
                                 {
-                                    byte[] bytes = totalBuffer.getBytes();
+                                    if(buffer.toString().equals("{}"))
+                                    {
+                                        return;
+                                    }
+                                    var jsonObject = new JsonObject(buffer.toString());
 
-                                    var byteArrayInputStream = new ByteArrayInputStream(bytes);
+                                    jsonObject.forEach(entry ->
+                                    {
+                                        Set<ApplicationType> appTypes = new HashSet<>();
 
-                                    var objectInputStream = new ObjectInputStream(byteArrayInputStream);
+                                        ((JsonArray) entry.getValue()).forEach(
+                                                app -> appTypes.add(ApplicationType.valueOf((String) app))
+                                        );
 
-                                    ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> loadedStatuses =
-                                            (ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>>) objectInputStream.readObject();
+                                        fileStatuses.put(entry.getKey(), appTypes);
+                                    });
 
-                                    fileStatuses.clear();
-
-                                    fileStatuses.putAll(loadedStatuses);
-
-                                    logger.info("File status loaded from {}", FILE_PATH);
-
-                                    promise.complete();
-                                }
-                                catch (IOException | ClassNotFoundException e)
+                                }).exceptionHandler(error ->
                                 {
-                                    logger.error("Error loading file status from {}: {}", FILE_PATH, e.getMessage());
+                                    logger.error("Error while reading file content: {}", FILE_PATH, error);
 
-                                    promise.fail(e);
-                                }
-                                finally
+                                    promise.fail(error);
+                                }).endHandler(v ->
                                 {
                                     file.close();
-                                }
-                            });
 
-                            readStream.exceptionHandler(throwable ->
+                                    logger.info("Successfully read file: {}", FILE_PATH);
+
+                                    promiseHandler.complete();
+                                });
+
+                            }
+                            else
                             {
-                                logger.error("Error reading file {}: {}", FILE_PATH, throwable.getMessage());
+                                logger.error("Failed to open file for reading: ", openFile.cause());
 
-                                file.close();
-
-                                promise.fail(throwable);
-                            });
-
-                        }
-                        else
-                        {
-                            logger.error("Failed to open file {}: {}", FILE_PATH, openResult.cause().getMessage());
-
-                            promise.fail(openResult.cause());
-                        }
-                    });
-                }
-                else
-                {
-                    if (existResult.succeeded())
-                    {
-                        logger.warn("Status file does not exist. Starting with empty status.");
-
-                        promise.complete();
+                                promiseHandler.fail(openFile.cause());
+                            }
+                        });
                     }
                     else
                     {
-                        logger.error("Failed to check if file exists: {}", existResult.cause().getMessage());
+                        logger.warn("File does not exist or error occurred: {}", FILE_PATH);
 
-                        promise.fail(existResult.cause());
+                        promiseHandler.complete();
                     }
-                }
-
-            }
-            catch (Exception exception)
+                });
+            }).onComplete(result ->
             {
-                logger.error(exception.getMessage(),exception);
-            }
-        });
+                if (result.succeeded())
+                {
+                    promise.complete();
+
+                    logger.info("{} file read successfully", FILE_PATH);
+                }
+                else
+                {
+                    logger.error("Error while reading file {}", FILE_PATH, result.cause());
+                    promise.fail(result.cause());
+                }
+            });
+            return promise.future();
+        }
+        catch (Exception exception)
+        {
+            logger.error("Error while opening the file {}", FILE_PATH, exception);
+            promise.fail(exception);
+        }
 
         return promise.future();
     }
@@ -201,68 +177,70 @@ public class FileStatusTracker
     {
         try
         {
-            var byteArrayOutputStream = new ByteArrayOutputStream();
-
-            var objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
-
-            try
+            Main.vertx.executeBlocking(() ->
             {
-                objectOutputStream.writeObject(fileStatuses);
-
-                objectOutputStream.flush();
-
-                var buffer = Buffer.buffer(byteArrayOutputStream.toByteArray());
-
-                var options = new OpenOptions().setWrite(true).setCreate(true).setTruncateExisting(true);
-
-                Main.vertx.fileSystem().open(FILE_PATH, options, openResult ->
-                {
-                    try
-                    {
-                        if (openResult.succeeded())
+                Main.vertx.fileSystem()
+                        .open(FILE_PATH, new OpenOptions().setWrite(true).setCreate(true))
+                        .onComplete(result ->
                         {
-                            var file = openResult.result();
-                            file.write(buffer, 0, writeResult ->
+                            try
                             {
-                                if (writeResult.succeeded())
+                                if (result.succeeded())
                                 {
-                                    logger.info("File status written to {}", FILE_PATH);
+                                    var file = result.result();
+
+                                    var buffer = Buffer.buffer();
+
+                                    var json = new JsonObject();
+
+                                    fileStatuses.forEach((fileName, appTypes) ->
+                                    {
+                                        var appTypesArray = new JsonArray();
+
+                                        appTypes.forEach(appType -> appTypesArray.add(appType.name()));
+
+                                        json.put(fileName, appTypesArray);
+                                    });
+
+                                    buffer.appendString(json.encodePrettily());
+
+                                    file.write(buffer).onComplete(writeResult ->
+                                    {
+                                        try
+                                        {
+                                            if (writeResult.succeeded())
+                                            {
+                                                logger.info("Successfully wrote fileStatuses to file.");
+                                            }
+                                            else
+                                            {
+                                                logger.error("Failed to write to file: {}", FILE_PATH,
+                                                        writeResult.cause());
+                                            }
+                                            file.close();
+                                        }
+                                        catch (Exception exception)
+                                        {
+                                            logger.error(exception.getMessage(), exception);
+                                        }
+                                    });
                                 }
                                 else
                                 {
-                                    logger.error("Failed to write file status to {}: {}", FILE_PATH,
-                                            writeResult.cause().getMessage());
+                                    logger.error("Error while opening the file ", result.cause());
                                 }
-                                file.close();
-                            });
-                        }
-                        else
-                        {
-                            logger.error("Failed to open file for writing {}: {}", FILE_PATH,
-                                    openResult.cause().getMessage());
-                        }
-                    }
-                    catch (Exception exception)
-                    {
-                        logger.error(exception.getMessage(),exception);
-                    }
-                });
-            }
-            catch (Exception exception)
-            {
-                logger.error(exception.getMessage(), exception);
-            }
-
-        }
-        catch (IOException exception)
-        {
-            logger.error("Error preparing file status for writing: {}", exception.getMessage());
+                            }
+                            catch (Exception exception)
+                            {
+                                logger.error(exception.getMessage(), exception);
+                            }
+                        });
+                return Future.succeededFuture();
+            });
         }
         catch (Exception exception)
         {
-            logger.error(exception.getMessage(),exception);
+            logger.error(exception.getMessage(), exception);
         }
     }
-
-
 }

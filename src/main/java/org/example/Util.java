@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -22,8 +21,9 @@ public class Util
     private final static String IP_V4_REGEX = "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$";
     private final static String IP_V6_REGEX = "^([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)$";
 
-    public final static String PING_OUTPUT_REGEX = "(\\S+)\\s+:\\s+xmt/rcv/%loss\\s+=\\s+(\\d+)/(\\d+)/(\\d+)%,\\s+min/avg/max\\s+=\\s+([0-9.]+)/([0-9.]+)/([0-9.]+)";
-    public final static Pattern PING_OUTPUT_PATTERN = Pattern.compile(PING_OUTPUT_REGEX);
+    public final static Pattern PING_OUTPUT_PATTERN = Pattern.compile("(\\S+)\\s+:\\s+xmt/rcv/%loss = (\\d+)/(\\d+)/(\\d+)%, min/avg/max = ([0-9.]+)/([0-9.]+)/([0-9.]+)");
+
+    public final static StringBuilder commandOutput = new StringBuilder();
 
     private final static Pattern IP_V4_PATTERN = Pattern.compile(IP_V4_REGEX);
     private final static Pattern IP_V6_PATTERN = Pattern.compile(IP_V6_REGEX);
@@ -38,7 +38,7 @@ public class Util
         return IP_V4_PATTERN.matcher(ip).matches() || IP_V6_PATTERN.matcher(ip).matches();
     }
 
-    public static List<String> executeCommand(List<String> commands)
+    public static String executeCommand(List<String> commands)
     {
         Process process = null;
         try
@@ -53,19 +53,17 @@ public class Util
             {
                 process.destroyForcibly();
 
-                return new ArrayList<>();
+                return "";
             }
 
             String outputLine;
 
-            List<String> commandOutput = new ArrayList<>();
-
             while ((outputLine = stdInput.readLine()) != null)
             {
-                commandOutput.add(outputLine);
+                commandOutput.append(outputLine + Constants.NEW_LINE_CHAR);
             }
 
-            return commandOutput;
+            return commandOutput.toString();
         }
         catch (Exception exception)
         {
@@ -85,10 +83,11 @@ public class Util
 
                     process.getOutputStream().close();
                 }
+                commandOutput.setLength(0);
             }
             catch (Exception exception)
             {
-                logger.error("Error in closing process streams ",exception);
+                logger.error("Error in closing process streams: ",exception);
             }
         }
     }
@@ -153,14 +152,14 @@ public class Util
 
             var pingOutput = Util.executeCommand(command);
 
-            if (pingOutput != null && pingOutput.isEmpty())
+            if (pingOutput.isEmpty())
             {
                 logger.warn("No response from host [{}].", ip);
 
                 return false;
             }
 
-            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput.get(0));
+            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput);
 
             if (packetLossMatcher.find())
             {

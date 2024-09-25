@@ -18,7 +18,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PingScheduler extends AbstractVerticle
 {
@@ -40,9 +39,9 @@ public class PingScheduler extends AbstractVerticle
     @Override
     public void start()
     {
-        vertx.eventBus().localConsumer(Constants.OBJECT_PROVISION, message ->
+        vertx.eventBus().<String>localConsumer(Constants.OBJECT_PROVISION, message ->
 
-                objects.add(new JsonObject().put("ip", message.body().toString())
+                objects.add(new JsonObject().put("ip", message.body())
                         .put("next.poll.time", Instant.now().plus(INTERVAL,
                                 TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
         );
@@ -65,27 +64,29 @@ public class PingScheduler extends AbstractVerticle
                     batch.add(objects.poll().getString("ip"));
 
                 }
-                ping(batch).onComplete(result ->
+                if (!batch.isEmpty())
                 {
-                    try
+                    ping(batch).onComplete(result ->
                     {
-                        if (result.succeeded())
+                        try
                         {
-                            FileStatusTracker.addFile(result.result());
+                            if (result.succeeded())
+                            {
+                                FileStatusTracker.addFile(result.result());
 
-                            vertx.eventBus().publish(Constants.EVENT_NEW_FILE, result.result());
+                                vertx.eventBus().publish(Constants.EVENT_NEW_FILE, result.result());
+                            }
+                            else
+                            {
+                                logger.error("Error in processing batch: ", result.cause());
+                            }
                         }
-                        else
+                        catch (Exception exception)
                         {
-                            logger.error("Error in processing batch: ", result.cause());
+                            logger.error(exception.getMessage(), exception);
                         }
-                    }
-                    catch (Exception exception)
-                    {
-                        logger.error(exception.getMessage(), exception);
-                    }
-
-                });
+                    });
+                }
                 if (!lastPolledObjects.isEmpty())
                 {
                     for (var object : lastPolledObjects)
@@ -108,6 +109,9 @@ public class PingScheduler extends AbstractVerticle
     private Future<String> ping(List<String> batch)
     {
         Promise<String> promise = Promise.promise();
+
+        System.out.println(batch);
+
         try
         {
             batch.add(0, "fping");
@@ -119,28 +123,32 @@ public class PingScheduler extends AbstractVerticle
             {
                 try
                 {
-                    var outputs = Util.executeCommand(batch);
-
-                    if (!outputs.isEmpty())
+                    var output = Util.executeCommand(batch);
+                    System.out.println("output : " + output);
+                    if (!output.isEmpty())
                     {
-                        Buffer buffer = Buffer.buffer();
-                        for (var output : outputs)
+                        var buffer = Buffer.buffer();
+
+                        var outputLines = output.split(Constants.NEW_LINE_CHAR);
+
+                        for (var line : outputLines)
                         {
-                            var processedOutput = processPingResult(output);
+                            var processedOutput = processPingResult(line);
 
                             if (processedOutput != null)
                             {
-                                buffer.appendBuffer(Buffer.buffer(processedOutput.encode() + "\n"));
+                                buffer.appendBuffer(Buffer.buffer(processedOutput.encode() + Constants.NEW_LINE_CHAR));
                             }
                         }
 
-                        String fileName = Constants.BASE_DIR + "/" + LocalDateTime.now().format(FILE_NAME_FORMATTER) + ".txt";
+                        var fileName = LocalDateTime.now()
+                                .format(FILE_NAME_FORMATTER) + ".txt";
 
-                        Util.writeToFile(fileName, buffer).onComplete(result ->
+                        Util.writeToFile(Constants.BASE_DIR + "/" + fileName, buffer).onComplete(result ->
                         {
                             if (result.succeeded())
                             {
-                                logger.info("object poll result added to file ");
+                                logger.info("object poll result added to file {}", fileName);
 
                                 promise.complete(fileName);
                             }
@@ -181,7 +189,7 @@ public class PingScheduler extends AbstractVerticle
 
             if (packetMatcher.find())
             {
-                JsonObject result = new JsonObject()
+                var result = new JsonObject()
                         .put("IP", packetMatcher.group(1))
                         .put("Packets transmitted", packetMatcher.group(2))
                         .put("Packets received", packetMatcher.group(3))

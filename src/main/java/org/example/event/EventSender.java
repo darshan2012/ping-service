@@ -29,11 +29,10 @@ public class EventSender extends AbstractVerticle
     private static final int MAX_EVENTS = 100; // 100 events in 5 minutes
     private static final int PING_TIMEOUT = 5000;
 
-    private final static String FILE_NAME_REGEX = ".*?(" + Constants.BASE_DIR + Constants.TEXT_FILE_REGEX + ")$";
-    private final static Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
+    private final static Pattern FILE_NAME_PATTERN = Pattern.compile("[^/]+$");
 
-    private ApplicationType applicationType;
-    private JsonObject applicationContext;
+    private final ApplicationType applicationType;
+    private final JsonObject applicationContext;
 
     private final static ZContext context = new ZContext();
     private final ZMQ.Socket pushSocket = context.createSocket(SocketType.PUSH);
@@ -57,11 +56,7 @@ public class EventSender extends AbstractVerticle
         {
             initializeFileQueue();
 
-            vertx.eventBus().localConsumer(Constants.EVENT_NEW_FILE, file ->
-            {
-                fileQueue.add(file.body().toString());
-
-            });
+            vertx.eventBus().<String>localConsumer(Constants.EVENT_NEW_FILE, file -> fileQueue.add(file.body()));
         }
         catch (Exception exception)
         {
@@ -83,7 +78,7 @@ public class EventSender extends AbstractVerticle
                         {
                             checkIsAlive();
 
-                            startProcessings();
+                            startProcessing();
 
                             return Future.succeededFuture();
                         }
@@ -97,7 +92,7 @@ public class EventSender extends AbstractVerticle
                 }
                 else
                 {
-                    logger.error("Failed to read directory: " + dirResult.cause().getMessage());
+                    logger.error("Failed to read directory: {}", dirResult.cause().getMessage());
                 }
             }
             catch (Exception exception)
@@ -130,26 +125,32 @@ public class EventSender extends AbstractVerticle
 
             for (String file : files)
             {
-                var matcher = FILE_NAME_PATTERN.matcher(file);
-
-                if (matcher.find())
+                try
                 {
-                    var extractedPath = matcher.group(1);
+                    var matcher = FILE_NAME_PATTERN.matcher(file);
 
-                    //check if the file is already read by the application and if it is then dont add it to queue
-                    if (FileStatusTracker.getFileStatus(extractedPath, applicationType))
+                    if (matcher.find())
                     {
-                        continue;
-                    }
+                        var extractedPath = matcher.group(1);
 
-                    fileQueue.add(extractedPath);
+                        //check if the file is already read by the application and if it is then dont add it to queue
+                        if (FileStatusTracker.getFileStatus(extractedPath, applicationType))
+                        {
+                            continue;
+                        }
+
+                        fileQueue.add(extractedPath);
+                    }
+                    else
+                    {
+                        logger.error("No match found for: {}", file);
+                    }
                 }
-                else
+                catch (Exception exception)
                 {
-                    logger.error("No match found for: " + file);
+                    logger.error("Error while finding pattern for file {} ",file);
                 }
             }
-
             return Future.succeededFuture();
         }
         catch (Exception exception)
@@ -160,7 +161,7 @@ public class EventSender extends AbstractVerticle
         }
     }
 
-    private void startProcessings()
+    private void startProcessing()
     {
         try
         {
@@ -168,19 +169,19 @@ public class EventSender extends AbstractVerticle
                     "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("port"));
 
             logger.info(
-                    "conntected to tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger(
-                            "port"));
+                    "conntected to tcp:// {} : {}", applicationContext.getString("ip"),
+                    applicationContext.getInteger("port"));
 
             // Start periodic task but process one file at a time
             vertx.setPeriodic(EVENT_INTERVAL, id ->
             {
                 try
                 {
-                    logger.info("periodic event sending started for " + applicationType.toString());
+                    logger.info("periodic event sending started for {}", applicationType.toString());
 
                     if (isAlive())
                     {
-                        logger.info("Connection is Alive " + applicationType.toString());
+                        logger.info("Connection is Alive {}", applicationType);
 
                         var events = new AtomicInteger(0);
 
@@ -226,7 +227,7 @@ public class EventSender extends AbstractVerticle
 
     private void read(String fileName, AtomicInteger events)
     {
-        vertx.fileSystem().open(fileName, new OpenOptions()).onComplete(fileResult ->
+        vertx.fileSystem().open(Constants.BASE_DIR + "/" + fileName, new OpenOptions()).onComplete(fileResult ->
         {
             try
             {
@@ -238,7 +239,7 @@ public class EventSender extends AbstractVerticle
 
                     var buffer = Buffer.buffer();
 
-                    AtomicInteger currentOffset = new AtomicInteger(applicationContext.getInteger("offset",
+                    var currentOffset = new AtomicInteger(applicationContext.getInteger("offset",
                             0));
 
                     asyncFile.setReadPos(currentOffset.get());
@@ -286,38 +287,40 @@ public class EventSender extends AbstractVerticle
                             if (events.get() >= MAX_EVENTS)
                             {
                                 logger.info(
-                                        "completed sending " + MAX_EVENTS + " events to " + applicationType.toString());
+                                        "completed sending {} events to {}", MAX_EVENTS, applicationType.toString());
                                 // hit the event limit, store file and offset
                                 applicationContext.put("currentFile", fileName).put("offset", currentOffset.get());
                             }
                             else
                             {
-                                logger.info("Completed reading file: " + fileName);
+                                logger.info("Completed reading file: {}", fileName);
 
                                 // finished reading the file, mark it as done and remove it from the queue
                                 FileStatusTracker.markFileAsRead(fileName, applicationType);
 
                                 if (FileStatusTracker.readByAllApps(fileName))
                                 {
-                                    logger.info("Deleting file " + fileName);
+                                    logger.info("Deleting file {}", fileName);
 
-                                    FileStatusTracker.removeFile(fileName);
-
-                                    vertx.fileSystem().delete(fileName).onComplete(fileDeleteResult ->
+                                    vertx.fileSystem().delete(fileName).onComplete(result ->
                                     {
-                                        if (fileDeleteResult.succeeded())
+                                        if (result.succeeded())
                                         {
-                                            logger.info("file " + fileName + " deleted.");
+                                            FileStatusTracker.removeFile(fileName);
+
+                                            logger.info("file {} deleted.", fileName);
                                         }
                                         else
                                         {
-                                            logger.info("Error in deleting file " + fileName);
+                                            logger.info("Error in deleting file {}", fileName);
                                         }
                                     });
                                 }
+
                                 fileQueue.poll();
 
-                                applicationContext.put("currentFile", fileName).put("offset", 0);
+                                if (fileQueue.peek() != null)
+                                    applicationContext.put("currentFile", fileQueue.peek()).put("offset", 0);
 
                                 processNextFile(events);
                             }
@@ -382,8 +385,8 @@ public class EventSender extends AbstractVerticle
             pingSocket.connect(
                     "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
 
-            logger.info("Connected to ping socket at tcp://" + applicationContext.getString(
-                    "ip") + ":" + applicationContext.getInteger("pingPort"));
+            logger.info("Connected to ping socket at tcp://{}:{}", applicationContext.getString(
+                    "ip"), applicationContext.getInteger("pingPort"));
 
             new Thread(() ->
             {
@@ -399,7 +402,7 @@ public class EventSender extends AbstractVerticle
                         }
                         else
                         {
-                            logger.error("Unexpected response: " + pong);
+                            logger.error("Unexpected response: {}", pong);
                         }
                     }
                     catch (Exception exception)
