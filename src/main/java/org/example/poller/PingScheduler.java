@@ -56,8 +56,6 @@ public class PingScheduler extends AbstractVerticle
         {
             try
             {
-                List<Future<Void>> futures = new ArrayList<>();
-
                 List<String> batch = new LinkedList<>();
 
                 while (!objects.isEmpty() && objects.peek().getLong("next.poll.time") <= Instant.now().toEpochMilli())
@@ -131,7 +129,7 @@ public class PingScheduler extends AbstractVerticle
                             buffer.appendBuffer(Buffer.buffer(processPingResult(output).encode() + "\n"));
                         }
 
-                        String fileName = LocalDateTime.now().format(FILE_NAME_FORMATTER);
+                        String fileName = Constants.BASE_DIR + "/" + LocalDateTime.now().format(FILE_NAME_FORMATTER) + ".txt";
 
                         Util.writeToFile(fileName, buffer).onComplete(result ->
                         {

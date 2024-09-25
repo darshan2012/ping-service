@@ -22,7 +22,7 @@ public class ApplicationContextStore
 
     private static final Map<ApplicationType, JsonObject> contexts = new HashMap<>();
 
-    private final static String FILE_PATH = Constants.BASE_DIR + "/data/context.txt";
+    private final static String FILE_PATH = Constants.CURRENT_DIR +"/" + Constants.BASE_DIR + "/data/context.txt";
 
     public static JsonObject getAppContext(ApplicationType applicationType)
     {
@@ -56,7 +56,7 @@ public class ApplicationContextStore
                 for (Map.Entry<ApplicationType, JsonObject> entry : contexts.entrySet())
                 {
                     context.put(entry.getKey().toString(),
-                            entry.getValue()); // Key: ApplicationType, Value: JsonObject
+                            entry.getValue());
                 }
 
                 Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(context.encodePrettily()), result ->

@@ -35,7 +35,8 @@ public class Main
                                 return Future.succeededFuture();
                             })
                     )
-                    .compose(result -> {
+                    .compose(result ->
+                    {
                         vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
                         {
                             ApplicationContextStore.write();

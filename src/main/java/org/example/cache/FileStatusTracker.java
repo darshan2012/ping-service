@@ -5,6 +5,7 @@ import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.OpenOptions;
 import io.vertx.core.streams.ReadStream;
+import org.example.Constants;
 import org.example.Main;
 import org.example.Constants.ApplicationType;
 import org.example.store.ApplicationContextStore;
@@ -22,7 +23,7 @@ public class FileStatusTracker
     // ApplicationStatus holds the read status for Primary, Secondary, and Failure
     private static final ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileStatuses = new ConcurrentHashMap<>();
 
-    private static final String FILE_PATH = "data/data/filestatuses.txt";
+    private static final String FILE_PATH = Constants.CURRENT_DIR + "/" + Constants.BASE_DIR + "/data/filestatuses.txt";
 
     private static final Logger logger = LoggerFactory.getLogger(FileStatusTracker.class);
 
@@ -97,7 +98,7 @@ public class FileStatusTracker
 
     public static Future<Void> read()
     {
-        Promise<Void> promise = Promise.promise();  // Create a promise to handle future completion
+        Promise<Void> promise = Promise.promise();
 
         Main.vertx.fileSystem().exists(FILE_PATH, existResult ->
         {

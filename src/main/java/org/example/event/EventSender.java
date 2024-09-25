@@ -25,9 +25,8 @@ import java.util.regex.Pattern;
 public class EventSender extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(EventSender.class);
-    private static final int EVENT_INTERVAL = 60000; // 5 minutes
-    private static final int MAX_EVENTS = 10; // 100 events in 5 minutes
-    private static final int PING_INTERVAL = 3000; // Ping every 3 seconds
+    private static final int EVENT_INTERVAL = 60000 * 5; // 5 minutes
+    private static final int MAX_EVENTS = 100; // 100 events in 5 minutes
     private static final int PING_TIMEOUT = 5000;
 
     private final static String FILE_NAME_REGEX = ".*?(" + Constants.BASE_DIR + Constants.TEXT_FILE_REGEX + ")$";

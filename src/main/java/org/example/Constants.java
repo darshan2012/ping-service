@@ -9,6 +9,8 @@ public class Constants
         PRIMARY, SECONDARY, FAILOVER
     }
 
+    public static final String CURRENT_DIR = System.getProperty("user.dir");
+
     public static final String BASE_DIR = "data";
 
     public static final int FILE_STORE_INTERVAL = 60000;
