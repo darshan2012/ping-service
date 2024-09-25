@@ -1,10 +1,10 @@
-package org.example.apiServer;
+package org.example.Server;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
-import org.example.event.ApplicationType;
+import org.example.Constants.ApplicationType;
 import org.example.event.EventSender;
 import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
@@ -27,7 +27,7 @@ public class HTTPServer extends AbstractVerticle
         {
             try
             {
-                logger.info("Received a POST request to /connect");
+                logger.info("Received a POST request to /register");
 
                 var requestBody = context.body().asJsonObject();
 
@@ -38,8 +38,6 @@ public class HTTPServer extends AbstractVerticle
                 var type = requestBody.getString("type");
 
                 var pingPort = requestBody.getInteger("pingPort");
-
-                System.out.println(pingPort + port);
 
                 if (ip == null || port == null || type == null || pingPort == null)
                 {

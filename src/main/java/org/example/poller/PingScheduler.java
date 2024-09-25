@@ -56,7 +56,7 @@ public class PingScheduler extends AbstractVerticle
         {
             try
             {
-                String fileName="";
+                String fileName = "";
 
                 boolean createNewFile = true;
 
@@ -70,11 +70,14 @@ public class PingScheduler extends AbstractVerticle
 
                         vertx.fileSystem().createFileBlocking(fileName);
 
+                        FileStatusTracker.addFile(fileName);
+
                         final String []fileNames = new String[]{fileName};
 
-                        vertx.setTimer(INTERVAL, timerId -> {
-                            vertx.eventBus().publish("new-file",fileNames[0]);
+                        vertx.setTimer(INTERVAL * 2, timerId -> {
+                            vertx.eventBus().publish(Constants.EVENT_ADDRESS,fileNames[0]);
                         });
+
                     }
                     lastPolledObjects.add(objects.peek());
 
@@ -121,14 +124,11 @@ public class PingScheduler extends AbstractVerticle
                                         Buffer.buffer(result.put("ip", ip)
                                                 .put("timestamp", LocalDateTime.now().toString())
                                                 .encode() + "\n"))
-                                .onComplete(fileWriteResult ->
+                                .onFailure(fileWriteResult ->
                                 {
                                     try
                                     {
-                                        if (fileWriteResult.succeeded())
-                                        {
-                                            FileStatusTracker.addFile(fileName);
-                                        }
+                                        logger.error(fileWriteResult.getMessage());
                                     }
                                     catch (Exception exception)
                                     {

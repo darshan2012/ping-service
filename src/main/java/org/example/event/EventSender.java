@@ -1,10 +1,12 @@
 package org.example.event;
 
+import org.example.Constants.ApplicationType;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonObject;
+import org.example.Constants;
 import org.example.cache.FileStatusTracker;
 import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
@@ -28,7 +30,7 @@ public class EventSender extends AbstractVerticle
     private static final int PING_INTERVAL = 3000; // Ping every 3 seconds
     private static final int PING_TIMEOUT = 5000;
 
-    private final static String FILE_NAME_REGEX = ".*?(data/.*\\.txt)$";
+    private final static String FILE_NAME_REGEX = ".*?(" + Constants.BASE_DIR + Constants.TEXT_FILE_REGEX + ")$";
     private final static Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
 
     private ApplicationType applicationType;
@@ -57,6 +59,13 @@ public class EventSender extends AbstractVerticle
         try
         {
             initializeFileQueue();
+
+            vertx.eventBus().localConsumer(Constants.EVENT_ADDRESS, file ->
+            {
+                fileQueue.add(file.body().toString());
+
+                System.out.println(fileQueue);
+            });
         }
         catch (Exception exception)
         {
@@ -66,8 +75,7 @@ public class EventSender extends AbstractVerticle
 
     private void initializeFileQueue()
     {
-        //later change directory path in variable
-        vertx.fileSystem().readDir("data/", ".*\\.txt$").onComplete(dirResult ->
+        vertx.fileSystem().readDir(Constants.BASE_DIR, Constants.TEXT_FILE_REGEX).onComplete(dirResult ->
         {
             try
             {
@@ -103,18 +111,19 @@ public class EventSender extends AbstractVerticle
         });
     }
 
-    private Future processDirectoryResults(List<String> files)
+    private Future<Void> processDirectoryResults(List<String> files)
     {
         try
         {
-            Collections.sort(files);
-
             if (files == null || files.isEmpty())
             {
                 logger.warn("directory is currently empty");
 
                 return Future.succeededFuture();
             }
+
+            Collections.sort(files);
+
             if (applicationContext.getString("currentFile") == null || applicationContext.getString("currentFile")
                     .isEmpty())
             {
@@ -122,20 +131,23 @@ public class EventSender extends AbstractVerticle
 
                 applicationContext.put("offset", 0);
             }
+            for(var file : files)
+                System.out.println(file);
 
             for (String file : files)
             {
                 var matcher = FILE_NAME_PATTERN.matcher(file);
+
                 if (matcher.find())
                 {
                     var extractedPath = matcher.group(1);
 
-                    //another way to do this can be matchint with currentfile
                     //check if the file is already read by the application and if it is then dont add it to queue
                     if (FileStatusTracker.getFileStatus(extractedPath, applicationType))
                     {
                         continue;
                     }
+
                     fileQueue.add(extractedPath);
                 }
                 else
@@ -143,8 +155,9 @@ public class EventSender extends AbstractVerticle
                     logger.error("No match found for: " + file);
                 }
             }
-            return Future.succeededFuture();
+            System.out.println(fileQueue);
 
+            return Future.succeededFuture();
         }
         catch (Exception exception)
         {
@@ -174,7 +187,9 @@ public class EventSender extends AbstractVerticle
 
                     if (isAlive())
                     {
-                        var events = new AtomicInteger(0); // Wrap the counter in AtomicInteger
+                        logger.info("Connection is Alive " + applicationType.toString());
+
+                        var events = new AtomicInteger(0);
 
                         processNextFile(events);
                     }
@@ -196,7 +211,6 @@ public class EventSender extends AbstractVerticle
                 {
                     logger.error(exception.getMessage(), exception);
                 }
-
             });
         }
         catch (Exception exception)
@@ -211,6 +225,7 @@ public class EventSender extends AbstractVerticle
         {
             if (!fileQueue.isEmpty() && events.get() < MAX_EVENTS)
             {
+
                 var currentFile = fileQueue.peek();
 
                 if (currentFile != null)
@@ -227,7 +242,7 @@ public class EventSender extends AbstractVerticle
 
     private void read(String fileName, AtomicInteger events)
     {
-        vertx.fileSystem().open(fileName, new OpenOptions().setRead(true)).onComplete(fileResult ->
+        vertx.fileSystem().open(fileName, new OpenOptions()).onComplete(fileResult ->
         {
             try
             {
@@ -281,6 +296,8 @@ public class EventSender extends AbstractVerticle
                         try
                         {
                             asyncFile.close();
+
+                            pushSocket.send("completed");
 
                             if (events.get() >= MAX_EVENTS)
                             {
@@ -341,7 +358,6 @@ public class EventSender extends AbstractVerticle
             {
                 logger.error("Error while reading file ", exception);
             }
-
         });
     }
 

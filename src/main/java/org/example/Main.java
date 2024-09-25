@@ -1,7 +1,7 @@
 package org.example;
 
 import io.vertx.core.*;
-import org.example.apiServer.HTTPServer;
+import org.example.Server.HTTPServer;
 import org.example.cache.FileStatusTracker;
 import org.example.poller.PingScheduler;
 import org.example.store.ApplicationContextStore;
@@ -10,9 +10,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.Collections;
-import java.util.List;
-import java.util.regex.Pattern;
 
 public class Main
 {
@@ -24,140 +21,41 @@ public class Main
     {
         try
         {
-            ApplicationContextStore.loadContextFromFile()
+            ApplicationContextStore.read()
+                    .compose(result -> FileStatusTracker.read())
                     .compose(result ->
                     {
-                        return FileStatusTracker.loadStatusFromFile();
+                        return
+                                vertx.deployVerticle(new HTTPServer())
+                                .compose(deployment ->
+                                {
+                                    vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
+                                    {
+                                        ApplicationContextStore.write();
+
+                                        FileStatusTracker.write();
+                                    });
+                                    logger.info("HTTPServer deployed successfully.");
+
+                                    return Future.succeededFuture();
+                                });
                     })
                     .compose(result ->
                     {
-                        vertx.deployVerticle(new HTTPServer(), deployment ->
-                        {
-                            if (deployment.succeeded())
-                            {
-//                                FileStatusTracker.writeStatusToFile();
-
-//                                ApplicationContextStore.writeContextToFile();
-
-                                logger.info("HTTPSever deployed successfully.");
-                            }
-                            else
-                            {
-                                logger.error("Failed to deploy HTTPSever", deployment.cause());
-                            }
-                        });
-
-                        return Future.succeededFuture();
-                    }).compose(result ->
-                    {
-                        vertx.deployVerticle(new PingScheduler())
+                        return vertx.deployVerticle(new PingScheduler())
                                 .compose(deployment ->
                                 {
                                     logger.info("PingScheduler deployed successfully.");
-                                    new Thread(() ->
-                                    {
-                                        logger.info("new thread for ui started");
-                                        var inputReader = new BufferedReader(new InputStreamReader(System.in));
-                                        while (true)
-                                        {
-                                            try
-                                            {
-                                                System.out.print("Enter valid IP: ");
 
-                                                var ip = inputReader.readLine();
+                                    UI();
 
-                                                if (!Util.isValidIp(ip))
-                                                {
-                                                    System.out.println("Invalid IP: " + ip);
-
-                                                    continue;
-                                                }
-                                                System.out.println("Checking if host [ " + ip + "] is up...");
-                                                if (Util.isHostAlive(ip))
-                                                {
-                                                    System.out.println("Host [ " + ip + " ] is up.");
-
-                                                    System.out.print("Do you want to provision? [Y/N]: ");
-
-                                                    var provision = inputReader.readLine();
-
-                                                    if (provision.equalsIgnoreCase("y"))
-                                                    {
-                                                        System.out.println("Provisioning started for IP: " + ip);
-
-                                                        Main.vertx.eventBus().send("object.provision", ip);
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    System.out.println("Host [ " + ip + "] is down.");
-                                                }
-                                            }
-                                            catch (Exception exception)
-                                            {
-                                                logger.error("Error occurred while processing input: ", exception);
-                                            }
-                                        }
-                                    }).start();
                                     return Future.succeededFuture();
                                 });
-                        return Future.succeededFuture();
+                    })
+                    .onFailure(error ->
+                    {
+                        logger.error("Error in application startup: ", error);
                     });
-
-//            Thread.sleep(5000);
-//            vertx.fileSystem().readDir("data", ".*\\.txt$").onComplete(dirResult ->
-//            {
-//                try
-//                {
-//                    if (dirResult.succeeded())
-//                    {
-//                        List<String> files = dirResult.result();
-//
-//                        if (files == null || files.isEmpty())
-//                        {
-//                            logger.warn("Directory is currently empty");
-//
-//                            return;
-//                        }
-//
-//                        Collections.sort(files);
-//
-//                        String FILE_NAME_REGEX = ".*?(data/.*\\.txt)$";
-//
-//                        Pattern FILE_NAME_PATTERN = Pattern.compile(FILE_NAME_REGEX);
-//
-//                        System.out.println(files);
-//
-//                        for (String file : files)
-//                        {
-//
-//                            var matcher = FILE_NAME_PATTERN.matcher(file);
-//                            if (matcher.find())
-//                            {
-//                                var extractedPath = matcher.group(1);
-//                                FileStatusTracker.addFile(extractedPath);
-//                                System.out.println(extractedPath);
-//                            }
-//                            else
-//                            {
-//                                logger.error("No match found for: " + file);
-//                            }
-//                        }
-//                        logger.info("Files added to FileStatusTracker");
-//
-//                        FileStatusTracker.writeStatusToFile();
-//                    }
-//                    else
-//                    {
-//                        logger.error("Failed to read directory: " + dirResult.cause().getMessage());
-//                    }
-//                }
-//                catch (Exception exception)
-//                {
-//                    logger.error(exception.getMessage(), exception);
-//                }
-//            });
-
         }
         catch (Exception exception)
         {
@@ -165,5 +63,55 @@ public class Main
         }
     }
 
+    private static void UI()
+    {
+        new Thread(() ->
+        {
+            logger.info("new thread for ui started");
 
+            var inputReader = new BufferedReader(new InputStreamReader(System.in));
+
+            while (true)
+            {
+                try
+                {
+                    System.out.print("Enter valid IP: ");
+
+                    var ip = inputReader.readLine();
+
+                    if (!Util.isValidIp(ip))
+                    {
+                        System.out.println("Invalid IP: " + ip);
+
+                        continue;
+                    }
+                    System.out.println("Checking if host [ " + ip + "] is up...");
+
+                    if (Util.isHostAlive(ip))
+                    {
+                        System.out.println("Host [ " + ip + " ] is up.");
+
+                        System.out.print("Do you want to provision? [Y/N]: ");
+
+                        var provision = inputReader.readLine();
+
+                        if (provision.equalsIgnoreCase("y"))
+                        {
+                            System.out.println("Provisioning started for IP: " + ip);
+
+                            Main.vertx.eventBus().send("object.provision", ip);
+                        }
+                    }
+                    else
+                    {
+                        System.out.println("Host [ " + ip + "] is down.");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    logger.error("Error occurred while processing input: ", exception);
+                }
+            }
+        }).start();
+    }
 }

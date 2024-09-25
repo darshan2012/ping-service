@@ -1,0 +1,10 @@
+{
+  "SECONDARY" : {
+    "bad" : "akdf",
+    "alsd" : 1212
+  },
+  "PRIMARY" : {
+    "bad" : "akdf",
+    "alsd" : 1212
+  }
+}

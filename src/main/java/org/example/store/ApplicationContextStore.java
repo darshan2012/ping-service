@@ -3,19 +3,14 @@ package org.example.store;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.file.AsyncFile;
-import io.vertx.core.file.FileSystem;
-import io.vertx.core.file.OpenOptions;
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.example.Main;
-import org.example.event.ApplicationType;
+import org.example.Util;
+import org.example.Constants.ApplicationType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -26,7 +21,7 @@ public class ApplicationContextStore
 
     private static Map<ApplicationType, JsonObject> contexts = new HashMap<>();
 
-    private final static String CONTEXT_FILE = "data/context.txt";
+    private final static String FILE_PATH = "data/data/context.txt";
 
     public static JsonObject getAppContext(ApplicationType applicationType)
     {
@@ -50,155 +45,104 @@ public class ApplicationContextStore
         return contexts.size();
     }
 
-    public static Future<Void> loadContextFromFile()
+    public static Future<Void> write()
     {
-        Promise<Void> promise = Promise.promise();  // Create a promise to handle future completion
+        Promise<Void> promise = Promise.promise();
 
-        Main.vertx.fileSystem().exists(CONTEXT_FILE, existResult ->
+        Main.vertx.executeBlocking(future ->
         {
-            if (existResult.succeeded() && existResult.result())
+            try
             {
-                var options = new OpenOptions().setRead(true);
+                Util.createFileIfNotExist(FILE_PATH);
 
-                Main.vertx.fileSystem().open(CONTEXT_FILE, options, openResult ->
+                JsonObject mapAsJson = new JsonObject();
+
+                for (Map.Entry<ApplicationType, JsonObject> entry : contexts.entrySet())
                 {
-                    if (openResult.succeeded())
+                    mapAsJson.put(entry.getKey().toString(),
+                            entry.getValue()); // Key: ApplicationType, Value: JsonObject
+                }
+
+                Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(mapAsJson.encodePrettily()), result ->
+                {
+                    if (result.succeeded())
                     {
-                        var file = openResult.result();
+                        logger.info("Contexts successfully written to file.");
 
-                        var totalBuffer = Buffer.buffer();
-
-                        file.handler(totalBuffer::appendBuffer)
-                                .endHandler(v ->
-                                {
-                                    try
-                                    {
-                                        byte[] bytes = totalBuffer.getBytes();
-
-                                        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
-
-                                        ObjectInputStream objectInputStream = new ObjectInputStream(
-                                                byteArrayInputStream);
-
-                                        Map<ApplicationType, JsonObject> loadedContexts =
-                                                (Map<ApplicationType, JsonObject>) objectInputStream.readObject();
-
-                                        contexts.clear();
-
-                                        contexts.putAll(loadedContexts);
-
-                                        logger.info("Context loaded from {}", CONTEXT_FILE);
-
-                                        promise.complete();
-                                    }
-                                    catch (IOException | ClassNotFoundException e)
-                                    {
-                                        logger.error("Error loading context from {}: {}", CONTEXT_FILE, e.getMessage());
-
-                                        promise.fail(e);
-                                    }
-                                    finally
-                                    {
-                                        file.close();
-                                    }
-                                })
-                                .exceptionHandler(throwable ->
-                                {
-                                    logger.error("Error reading file {}: {}", CONTEXT_FILE, throwable.getMessage());
-
-                                    file.close();
-
-                                    promise.fail(throwable);
-                                });
+                        future.complete();
                     }
                     else
                     {
-                        logger.error("Failed to open file {}: {}", CONTEXT_FILE, openResult.cause().getMessage());
+                        logger.error("Failed to write contexts to file: ", result.cause());
 
-                        // Fail the promise if opening the file fails
-                        promise.fail(openResult.cause());
+                        future.fail(result.cause());
                     }
                 });
             }
-            else
+            catch (Exception e)
             {
-                if (existResult.succeeded())
-                {
-                    logger.warn("Context file does not exist. Starting with empty context.");
-                    promise.complete();  // No context file, but still successful (empty context)
-                }
-                else
-                {
-                    logger.error("Failed to check if file exists: {}", existResult.cause().getMessage());
-
-                    // Fail the promise if file existence check fails
-                    promise.fail(existResult.cause());
-                }
+                future.fail(e);
             }
-        });
+        }, false, promise);
 
-        // Return the future from the promise
         return promise.future();
     }
 
-    public static void writeContextToFile()
+    public static Future<Void> read()
     {
-        try
+        Promise<Void> promise = Promise.promise();
+
+        if (!Main.vertx.fileSystem().existsBlocking(FILE_PATH))
         {
-            ByteArrayOutputStream ByteArrayOutputStream = new ByteArrayOutputStream();
-
-            ObjectOutputStream objectOutputStream = new ObjectOutputStream(ByteArrayOutputStream);
-
-            Main.vertx.setPeriodic(60000, id ->
+            promise.complete();
+            return promise.future();
+        }
+        Main.vertx.executeBlocking(future ->
+        {
+            Main.vertx.fileSystem().readFile(FILE_PATH, result ->
             {
-                try
+                if (result.succeeded())
                 {
-                    objectOutputStream.writeObject(contexts);
-
-                    objectOutputStream.flush();
-
-                    var buffer = Buffer.buffer(ByteArrayOutputStream.toByteArray());
-
-                    var options = new OpenOptions().setWrite(true).setCreate(true).setTruncateExisting(true);
-
-                    Main.vertx.fileSystem().open(CONTEXT_FILE, options, openResult ->
+                    try
                     {
-                        if (openResult.succeeded())
+                        if (result.result().toString().isEmpty())
                         {
-                            var file = openResult.result();
+                            promise.complete();
+                            return;
+                        }
+                        JsonObject fileContent = result.result().toJsonObject();
 
-                            file.write(buffer, 0, writeResult ->
-                            {
-                                if (writeResult.succeeded())
-                                {
-                                    logger.info("Context written to {}", CONTEXT_FILE);
-                                }
-                                else
-                                {
-                                    logger.error("Failed to write context to {}: {}", CONTEXT_FILE,
-                                            writeResult.cause().getMessage());
-                                }
-                                file.close();
-                            });
-                        }
-                        else
+                        contexts.clear();
+
+                        for (String key : fileContent.fieldNames())
                         {
-                            logger.error("Failed to open file for writing {}: {}", CONTEXT_FILE,
-                                    openResult.cause().getMessage());
+                            ApplicationType appType = ApplicationType.valueOf(key);
+
+                            JsonObject jsonObject = fileContent.getJsonObject(key);
+
+                            contexts.put(appType, jsonObject);
                         }
-                    });
+
+                        logger.info("Contexts successfully read from file.");
+
+                        future.complete();
+                    }
+                    catch (Exception e)
+                    {
+                        logger.error("Error while reading contexts from file: ", e);
+
+                        future.fail(e);
+                    }
                 }
-                catch (Exception exception)
+                else
                 {
-                    logger.error(exception.getMessage(), exception);
+                    logger.error("Failed to read file: ", result.cause());
+
+                    future.fail(result.cause());
                 }
-
             });
-        }
-        catch (IOException e)
-        {
-            logger.error("Error preparing context for writing: {}", e.getMessage());
-        }
-    }
+        }, false, promise);
 
+        return promise.future();
+    }
 }

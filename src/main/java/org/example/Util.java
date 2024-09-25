@@ -3,7 +3,6 @@ package org.example;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.OpenOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -167,5 +166,22 @@ public class Util
 
             return false;
         }
+    }
+
+    public static boolean createFileIfNotExist(String path)
+    {
+        try
+        {
+            if (!Main.vertx.fileSystem().existsBlocking(path))
+            {
+                Main.vertx.fileSystem().createFileBlocking(path);
+                return true;
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.error(exception.getMessage(),exception);
+        }
+        return false;
     }
 }
