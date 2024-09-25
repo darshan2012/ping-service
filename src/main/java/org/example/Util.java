@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -16,18 +19,14 @@ public class Util
 {
     private static final Logger logger = LoggerFactory.getLogger(Util.class);
 
-    private final static String NEW_LINE_CHAR = "\n";
-
     private final static String IP_V4_REGEX = "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$";
     private final static String IP_V6_REGEX = "^([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)$";
 
-    public final static String PING_OUTPUT_REGEX = ".* : xmt/rcv/%loss = (\\d+)/(\\d+)/(\\d+)%, min/avg/max = ([0-9.]+)/([0-9.]+)/([0-9.]+)";
+    public final static String PING_OUTPUT_REGEX = "(\\S+) : xmt/rcv/%loss = (\\d+)/(\\d+)/(\\d+)%, min/avg/max = ([0-9.]+)/([0-9.]+)/([0-9.]+)";
     public final static Pattern PING_OUTPUT_PATTERN = Pattern.compile(PING_OUTPUT_REGEX);
 
     private final static Pattern IP_V4_PATTERN = Pattern.compile(IP_V4_REGEX);
     private final static Pattern IP_V6_PATTERN = Pattern.compile(IP_V6_REGEX);
-
-    private static StringBuilder commandOutput = new StringBuilder();
 
     private final static long PROCESS_TIMEOUT = 20; // 20 seconds
 
@@ -39,13 +38,14 @@ public class Util
         return IP_V4_PATTERN.matcher(ip).matches() || IP_V6_PATTERN.matcher(ip).matches();
     }
 
-    public static String executeCommand(String... commands)
+    public static List<String> executeCommand(List<String> commands)
     {
+        Process process = null;
         try
         {
             var processBuilder = new ProcessBuilder(commands);
 
-            var process = processBuilder.start();
+            process = processBuilder.start();
 
             var stdInput = new BufferedReader(new InputStreamReader(process.getErrorStream()));
 
@@ -53,23 +53,19 @@ public class Util
             {
                 process.destroyForcibly();
 
-                return "";
+                return new ArrayList<>();
             }
 
             String outputLine;
 
+            List<String> commandOutput = new ArrayList<>();
+
             while ((outputLine = stdInput.readLine()) != null)
             {
-                commandOutput.append(outputLine).append(NEW_LINE_CHAR);
+                commandOutput.add(outputLine);
             }
 
-            process.getInputStream().close();
-
-            process.getErrorStream().close();
-
-            process.getOutputStream().close();
-
-            return commandOutput.toString();
+            return commandOutput;
         }
         catch (Exception exception)
         {
@@ -79,7 +75,21 @@ public class Util
         }
         finally
         {
-            commandOutput.setLength(0);
+            try
+            {
+                if (process != null)
+                {
+                    process.getInputStream().close();
+
+                    process.getErrorStream().close();
+
+                    process.getOutputStream().close();
+                }
+            }
+            catch (Exception exception)
+            {
+                logger.error("Error in closing process streams ",exception);
+            }
         }
     }
 
@@ -87,7 +97,7 @@ public class Util
     {
         Promise<Boolean> promise = Promise.promise();
 
-        Main.vertx.fileSystem().open(filename, new OpenOptions().setAppend(true)).onComplete(result ->
+        Main.vertx.fileSystem().open(filename, new OpenOptions().setCreate(true).setAppend(true)).onComplete(result ->
         {
             try
             {
@@ -134,20 +144,27 @@ public class Util
     {
         try
         {
-            var pingOutput = Util.executeCommand("fping", "-c", "5", "-q", ip);
+            List<String> command = new ArrayList<>();
+            command.add("fping");
+            command.add("-c");
+            command.add("5");
+            command.add("-q");
+            command.add(ip);
 
-            if (pingOutput.isEmpty())
+            var pingOutput = Util.executeCommand(command);
+
+            if (pingOutput != null && pingOutput.isEmpty())
             {
                 logger.warn("No response from host [{}].", ip);
 
                 return false;
             }
 
-            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput);
+            var packetLossMatcher = Util.PING_OUTPUT_PATTERN.matcher(pingOutput.get(0));
 
             if (packetLossMatcher.find())
             {
-                var packetLossPercent = Integer.parseInt(packetLossMatcher.group(3));
+                var packetLossPercent = Integer.parseInt(packetLossMatcher.group(4));
 
                 logger.debug("Packet loss for IP [{}] is {}%.", ip, packetLossPercent);
 

@@ -58,11 +58,10 @@ public class EventSender extends AbstractVerticle
         {
             initializeFileQueue();
 
-            vertx.eventBus().localConsumer(Constants.EVENT_ADDRESS, file ->
+            vertx.eventBus().localConsumer(Constants.EVENT_NEW_FILE, file ->
             {
                 fileQueue.add(file.body().toString());
 
-                System.out.println(fileQueue);
             });
         }
         catch (Exception exception)
@@ -129,8 +128,6 @@ public class EventSender extends AbstractVerticle
 
                 applicationContext.put("offset", 0);
             }
-            for(var file : files)
-                System.out.println(file);
 
             for (String file : files)
             {
@@ -153,7 +150,6 @@ public class EventSender extends AbstractVerticle
                     logger.error("No match found for: " + file);
                 }
             }
-            System.out.println(fileQueue);
 
             return Future.succeededFuture();
         }
@@ -280,7 +276,7 @@ public class EventSender extends AbstractVerticle
                             logger.error(exception.getMessage(), exception);
                         }
 
-                    }).endHandler(v ->
+                    }).endHandler(context ->
                     {
                         try
                         {
@@ -335,7 +331,7 @@ public class EventSender extends AbstractVerticle
                     {
                         logger.error("Error reading file: ", error);
 
-                        asyncFile.close(); // Ensure the file is closed on error
+                        asyncFile.close();
                     });
                 }
                 else

@@ -25,18 +25,6 @@ public class Main
                     .compose(result -> FileStatusTracker.read())
                     .compose(result ->
                             vertx.deployVerticle(new HTTPServer())
-                                    .compose(deployment ->
-                                    {
-                                        vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
-                                        {
-                                            ApplicationContextStore.write();
-
-                                            FileStatusTracker.write();
-                                        });
-                                        logger.info("HTTPServer deployed successfully.");
-
-                                        return Future.succeededFuture();
-                                    })
                     )
                     .compose(result -> vertx.deployVerticle(new PingScheduler()).compose(deployment ->
                             {
@@ -47,6 +35,15 @@ public class Main
                                 return Future.succeededFuture();
                             })
                     )
+                    .compose(result -> {
+                        vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
+                        {
+                            ApplicationContextStore.write();
+
+                            FileStatusTracker.write();
+                        });
+                        return Future.succeededFuture();
+                    })
                     .onFailure(error -> logger.error("Error in application startup: ", error));
         }
         catch (Exception exception)
@@ -91,7 +88,7 @@ public class Main
                         {
                             System.out.println("Provisioning started for IP: " + ip);
 
-                            Main.vertx.eventBus().send("object.provision", ip);
+                            Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, ip);
                         }
                     }
                     else

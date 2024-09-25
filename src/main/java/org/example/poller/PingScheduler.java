@@ -26,8 +26,6 @@ public class PingScheduler extends AbstractVerticle
 
     private static final DateTimeFormatter FILE_NAME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
-    private final static String BASE_DIR = Constants.BASE_DIR;
-
     private final static long INTERVAL = 10000;
 
     private final static int NO_OF_PACKETS = 5;
@@ -42,10 +40,10 @@ public class PingScheduler extends AbstractVerticle
     @Override
     public void start()
     {
-        vertx.eventBus().localConsumer("object.provision", message ->
+        vertx.eventBus().localConsumer(Constants.OBJECT_PROVISION, message ->
 
                 objects.add(new JsonObject().put("ip", message.body().toString())
-                        .put("nextPollTime", Instant.now().plus(INTERVAL,
+                        .put("next.poll.time", Instant.now().plus(INTERVAL,
                                 TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
         );
 
@@ -58,47 +56,47 @@ public class PingScheduler extends AbstractVerticle
         {
             try
             {
-                String fileName = "";
-
-                AtomicBoolean createNewFile = new AtomicBoolean(true);
-
                 List<Future<Void>> futures = new ArrayList<>();
 
-                while (!objects.isEmpty() && objects.peek().getLong("nextPollTime") <= Instant.now().toEpochMilli())
+                List<String> batch = new LinkedList<>();
+
+                while (!objects.isEmpty() && objects.peek().getLong("next.poll.time") <= Instant.now().toEpochMilli())
                 {
-                    if (createNewFile.get())
-                    {
-                        fileName = BASE_DIR + "/" + LocalDateTime.now().format(FILE_NAME_FORMATTER) + ".txt";
-
-                        createNewFile.set(false);
-
-                        vertx.fileSystem().createFileBlocking(fileName);
-
-                        FileStatusTracker.addFile(fileName);
-                    }
                     lastPolledObjects.add(objects.peek());
 
-                    futures.add(ping(objects.poll().getString("ip"), fileName));
+                    batch.add(objects.poll().getString("ip"));
+
                 }
-
-                if (!futures.isEmpty())
+                ping(batch).onComplete(result ->
                 {
-                    String finalFileName = fileName;
-
-                    Future.join(futures)
-                            .onComplete(ar -> vertx.eventBus().publish(Constants.EVENT_ADDRESS, finalFileName));
-                }
-
-                if (!lastPolledObjects.isEmpty())
-                {
-                    for (var IP : lastPolledObjects)
+                    try
                     {
-                        Instant.ofEpochMilli(IP.getLong("nextPollTime"))
-                                .plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
+                        if (result.succeeded())
+                        {
+                            FileStatusTracker.addFile(result.result());
 
-                        objects.add(IP);
+                            vertx.eventBus().publish(Constants.EVENT_NEW_FILE, result.result());
+                        }
+                        else
+                        {
+                            logger.error("Error in processing batch: ", result.cause());
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.error(exception.getMessage(), exception);
                     }
 
+                });
+                if (!lastPolledObjects.isEmpty())
+                {
+                    for (var object : lastPolledObjects)
+                    {
+                        Instant.ofEpochMilli(object.getLong("next.poll.time"))
+                                .plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
+
+                        objects.add(object);
+                    }
                     lastPolledObjects.clear();
                 }
             }
@@ -109,53 +107,56 @@ public class PingScheduler extends AbstractVerticle
         });
     }
 
-    public Future<Void> ping(String ip, String fileName)
+    private Future<String> ping(List<String> batch)
     {
-        Promise<Void> promise = Promise.promise();
+        Promise<String> promise = Promise.promise();
         try
         {
+            batch.add(0, "fping");
+            batch.add(1, "-c");
+            batch.add(2, String.valueOf(NO_OF_PACKETS));
+            batch.add(3, "-q");
 
             executor.executeBlocking(() ->
             {
-                var output = Util.executeCommand("fping", "-c", String.valueOf(NO_OF_PACKETS), "-q",
-                        ip);
-
-                if (!output.isEmpty())
+                try
                 {
-                    var result = processPingResult(output);
+                    var outputs = Util.executeCommand(batch);
 
-                    if (result != null && !result.isEmpty())
+                    if (!outputs.isEmpty())
                     {
-                        logger.info("Writing ping results for IP [{}] to file [{}]", ip, fileName);
+                        Buffer buffer = Buffer.buffer();
+                        for (var output : outputs)
+                        {
+                            buffer.appendBuffer(Buffer.buffer(processPingResult(output).encode() + "\n"));
+                        }
 
-                        Util.writeToFile(fileName,
-                                        Buffer.buffer(result.put("ip", ip)
-                                                .put("timestamp", LocalDateTime.now().toString())
-                                                .encode() + "\n"))
-                                .onComplete(fileWriteResult ->
-                                {
-                                    try
-                                    {
-                                        if (fileWriteResult.succeeded())
-                                        {
-                                            promise.complete();
-                                        }
-                                        else
-                                        {
-                                            promise.fail(fileWriteResult.cause());
-                                            logger.error(fileWriteResult.cause().getMessage());
-                                        }
-                                    }
-                                    catch (Exception exception)
-                                    {
-                                        promise.fail(fileWriteResult.cause());
-                                        logger.error(exception.getMessage(), exception);
-                                    }
-                                });
+                        String fileName = LocalDateTime.now().format(FILE_NAME_FORMATTER);
+
+                        Util.writeToFile(fileName, buffer).onComplete(result ->
+                        {
+                            if (result.succeeded())
+                            {
+                                logger.info("object poll result added to file ");
+
+                                promise.complete(fileName);
+                            }
+                            else
+                            {
+                                promise.fail(result.cause());
+                            }
+                        });
+                    }
+                    else
+                    {
+                        promise.fail("output is empty");
                     }
                 }
-                else
-                    promise.complete();
+                catch (Exception exception)
+                {
+                    logger.error(exception.getMessage(), exception);
+                }
+
                 return Future.succeededFuture();
             });
         }
@@ -164,8 +165,8 @@ public class PingScheduler extends AbstractVerticle
             promise.fail(exception);
             logger.error(exception.getMessage(), exception);
         }
-        return promise.future();
 
+        return promise.future();
     }
 
     public JsonObject processPingResult(String output)
@@ -176,12 +177,14 @@ public class PingScheduler extends AbstractVerticle
 
             if (packetMatcher.find())
             {
-                JsonObject result = new JsonObject().put("Packets transmitted", packetMatcher.group(1))
-                        .put("Packets received", packetMatcher.group(2))
-                        .put("Packet loss", packetMatcher.group(2))
-                        .put("Minimum latency", packetMatcher.group(2))
-                        .put("Average latency", packetMatcher.group(2))
-                        .put("Maximum latency", packetMatcher.group(2));
+                JsonObject result = new JsonObject()
+                        .put("IP", packetMatcher.group(1))
+                        .put("Packets transmitted", packetMatcher.group(2))
+                        .put("Packets received", packetMatcher.group(3))
+                        .put("Packet loss", packetMatcher.group(4))
+                        .put("Minimum latency", packetMatcher.group(5))
+                        .put("Average latency", packetMatcher.group(6))
+                        .put("Maximum latency", packetMatcher.group(7));
 
                 logger.debug("Processed ping output: {}", result.toString());
 

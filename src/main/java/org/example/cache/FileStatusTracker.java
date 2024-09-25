@@ -123,9 +123,9 @@ public class FileStatusTracker
                             {
                                 byte[] bytes = totalBuffer.getBytes();
 
-                                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+                                var byteArrayInputStream = new ByteArrayInputStream(bytes);
 
-                                ObjectInputStream objectInputStream = new ObjectInputStream(byteArrayInputStream);
+                                var objectInputStream = new ObjectInputStream(byteArrayInputStream);
 
                                 ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> loadedStatuses =
                                         (ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>>) objectInputStream.readObject();
@@ -133,8 +133,6 @@ public class FileStatusTracker
                                 fileStatuses.clear();
 
                                 fileStatuses.putAll(loadedStatuses);
-
-                                System.out.println(fileStatuses);
 
                                 logger.info("File status loaded from {}", FILE_PATH);
 

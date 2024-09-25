@@ -1,6 +1,7 @@
 package org.example.server;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
@@ -19,7 +20,7 @@ public class HTTPServer extends AbstractVerticle
     private final HashMap<ApplicationType, String> deployedApplications = new HashMap<>();
 
     @Override
-    public void start()
+    public void start(Promise<Void> startPromise)
     {
         HttpServer server = vertx.createHttpServer();
 
@@ -105,10 +106,12 @@ public class HTTPServer extends AbstractVerticle
         {
             if (http.succeeded())
             {
+                startPromise.complete();
                 logger.info("HTTP server started successfully on port " + http.result().actualPort());
             }
             else
             {
+                startPromise.fail(http.cause());
                 logger.error("Failed to start HTTP server", http.cause());
             }
         });

@@ -13,7 +13,11 @@ public class Constants
 
     public static final int FILE_STORE_INTERVAL = 60000;
 
-    public static final String EVENT_ADDRESS = "event.new-file";
+    public static final String EVENT_NEW_FILE = "event.new.file";
 
     public static final String TEXT_FILE_REGEX = ".*\\.txt$";
+
+    public final static String NEW_LINE_CHAR = "\n";
+
+    public static final String OBJECT_PROVISION = "object.provision";
 }
