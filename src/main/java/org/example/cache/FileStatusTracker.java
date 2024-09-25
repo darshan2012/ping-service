@@ -20,7 +20,7 @@ public class FileStatusTracker
 {
     // Map to store file names and read statuses for three applications.
     // ApplicationStatus holds the read status for Primary, Secondary, and Failure
-    private static ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileStatuses = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> fileStatuses = new ConcurrentHashMap<>();
 
     private static final String FILE_PATH = "data/data/filestatuses.txt";
 
@@ -45,9 +45,8 @@ public class FileStatusTracker
             var status = fileStatuses.get(fileName).get(applicationType);
 
             if (status == null)
-            {
                 return true;
-            }
+
             return status;
         }
         catch (Exception exception)
@@ -62,12 +61,9 @@ public class FileStatusTracker
 
         var applications = ApplicationContextStore.getApplications();
 
-        if (applications != null)
+        for (var app : applications)
         {
-            for (var app : applications)
-            {
-                appsWithStatus.put(app, false);
-            }
+            appsWithStatus.put(app, false);
         }
 
         fileStatuses.putIfAbsent(fileName, appsWithStatus);

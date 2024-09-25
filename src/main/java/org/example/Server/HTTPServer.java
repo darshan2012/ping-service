@@ -10,12 +10,16 @@ import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
+
 public class HTTPServer extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(HTTPServer.class);
 
+    private final HashMap<ApplicationType, String> deployedApplications = new HashMap<>();
+
     @Override
-    public void start() throws Exception
+    public void start()
     {
         HttpServer server = vertx.createHttpServer();
 
@@ -67,19 +71,23 @@ public class HTTPServer extends AbstractVerticle
 
                 ApplicationContextStore.setAppContext(applicationType, ip, port, pingPort);
 
-                vertx.deployVerticle(new EventSender(applicationType),
-                        deployResult ->
-                        {
-                            if (deployResult.succeeded())
+                if (deployedApplications.get(applicationType) == null)
+                {
+                    vertx.deployVerticle(new EventSender(applicationType),
+                            deployResult ->
                             {
-                                logger.info("EventSenderVerticle deployed successfully with deployment ID: {}",
-                                        deployResult.result());
-                            }
-                            else
-                            {
-                                logger.error("Failed to deploy EventSenderVerticle", deployResult.cause());
-                            }
-                        });
+                                if (deployResult.succeeded())
+                                {
+                                    deployedApplications.put(applicationType, deployResult.result());
+                                    logger.info("EventSenderVerticle deployed successfully with deployment ID: {}",
+                                            deployResult.result());
+                                }
+                                else
+                                {
+                                    logger.error("Failed to deploy EventSenderVerticle", deployResult.cause());
+                                }
+                            });
+                }
 
                 context.response().setStatusCode(200).end("Context set successfully, app will start sending data");
 

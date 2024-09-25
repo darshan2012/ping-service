@@ -24,38 +24,30 @@ public class Main
             ApplicationContextStore.read()
                     .compose(result -> FileStatusTracker.read())
                     .compose(result ->
-                    {
-                        return
-                                vertx.deployVerticle(new HTTPServer())
-                                .compose(deployment ->
-                                {
-                                    vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
+                            vertx.deployVerticle(new HTTPServer())
+                                    .compose(deployment ->
                                     {
-                                        ApplicationContextStore.write();
+                                        vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
+                                        {
+                                            ApplicationContextStore.write();
 
-                                        FileStatusTracker.write();
-                                    });
-                                    logger.info("HTTPServer deployed successfully.");
+                                            FileStatusTracker.write();
+                                        });
+                                        logger.info("HTTPServer deployed successfully.");
 
-                                    return Future.succeededFuture();
-                                });
-                    })
-                    .compose(result ->
-                    {
-                        return vertx.deployVerticle(new PingScheduler())
-                                .compose(deployment ->
-                                {
-                                    logger.info("PingScheduler deployed successfully.");
+                                        return Future.succeededFuture();
+                                    })
+                    )
+                    .compose(result -> vertx.deployVerticle(new PingScheduler()).compose(deployment ->
+                            {
+                                logger.info("PingScheduler deployed successfully.");
 
-                                    UI();
+                                UI();
 
-                                    return Future.succeededFuture();
-                                });
-                    })
-                    .onFailure(error ->
-                    {
-                        logger.error("Error in application startup: ", error);
-                    });
+                                return Future.succeededFuture();
+                            })
+                    )
+                    .onFailure(error -> logger.error("Error in application startup: ", error));
         }
         catch (Exception exception)
         {

@@ -37,14 +37,12 @@ public class EventSender extends AbstractVerticle
     private JsonObject applicationContext;
 
     private final static ZContext context = new ZContext();
-    private ZMQ.Socket pushSocket = context.createSocket(SocketType.PUSH);
-    private ZMQ.Socket pingSocket = context.createSocket(SocketType.PULL);
-
-    private ZMQ.Poller poller = context.createPoller(1);
+    private final ZMQ.Socket pushSocket = context.createSocket(SocketType.PUSH);
+    private final ZMQ.Socket pingSocket = context.createSocket(SocketType.PULL);
 
     private long timeStamp = System.currentTimeMillis();
 
-    private Queue<String> fileQueue = new ArrayDeque<>();
+    private final Queue<String> fileQueue = new ArrayDeque<>();
 
     public EventSender(ApplicationType applicationType)
     {
@@ -54,7 +52,7 @@ public class EventSender extends AbstractVerticle
     }
 
     @Override
-    public void start() throws Exception
+    public void start()
     {
         try
         {
@@ -380,14 +378,6 @@ public class EventSender extends AbstractVerticle
             {
                 logger.warn("Receiver is disconnected. Stopping event sending.");
 
-                vertx.undeploy(vertx.getOrCreateContext().deploymentID()).onComplete(result ->
-                {
-                    if (result.succeeded())
-                    {
-                        logger.info(
-                                "EventSenderVerticle undeployed successfully for application type " + applicationType.toString());
-                    }
-                });
                 return false;
             }
         }

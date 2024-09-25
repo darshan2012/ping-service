@@ -1,6 +1,7 @@
 package org.example.poller;
 
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import org.example.Constants;
 import org.example.Main;
 import org.example.Util;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PingScheduler extends AbstractVerticle
 {
@@ -28,24 +30,24 @@ public class PingScheduler extends AbstractVerticle
 
     private final static long INTERVAL = 10000;
 
-    private final static int NO_OF_PACKETS = 10;
+    private final static int NO_OF_PACKETS = 5;
 
-    private static Queue<JsonObject> objects = new LinkedList<>();
+    private static final Queue<JsonObject> objects = new LinkedList<>();
 
-    private static List<JsonObject> lastPolledObjects = new ArrayList<>();
+    private static final List<JsonObject> lastPolledObjects = new ArrayList<>();
 
     private final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
             TimeUnit.MINUTES);
 
     @Override
-    public void start() throws Exception
+    public void start()
     {
         vertx.eventBus().localConsumer("object.provision", message ->
-        {
-            objects.add(new JsonObject().put("ip", message.body().toString())
-                    .put("nextPollTime", Instant.now().plus(INTERVAL,
-                            TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()));
-        });
+
+                objects.add(new JsonObject().put("ip", message.body().toString())
+                        .put("nextPollTime", Instant.now().plus(INTERVAL,
+                                TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
+        );
 
         startPolling();
     }
@@ -58,37 +60,41 @@ public class PingScheduler extends AbstractVerticle
             {
                 String fileName = "";
 
-                boolean createNewFile = true;
+                AtomicBoolean createNewFile = new AtomicBoolean(true);
+
+                List<Future<Void>> futures = new ArrayList<>();
 
                 while (!objects.isEmpty() && objects.peek().getLong("nextPollTime") <= Instant.now().toEpochMilli())
                 {
-                    if(createNewFile)
+                    if (createNewFile.get())
                     {
                         fileName = BASE_DIR + "/" + LocalDateTime.now().format(FILE_NAME_FORMATTER) + ".txt";
 
-                        createNewFile = false;
+                        createNewFile.set(false);
 
                         vertx.fileSystem().createFileBlocking(fileName);
 
                         FileStatusTracker.addFile(fileName);
-
-                        final String []fileNames = new String[]{fileName};
-
-                        vertx.setTimer(INTERVAL * 2, timerId -> {
-                            vertx.eventBus().publish(Constants.EVENT_ADDRESS,fileNames[0]);
-                        });
-
                     }
                     lastPolledObjects.add(objects.peek());
 
-                    ping(objects.poll().getString("ip"),fileName);
+                    futures.add(ping(objects.poll().getString("ip"), fileName));
+                }
+
+                if (!futures.isEmpty())
+                {
+                    String finalFileName = fileName;
+
+                    Future.join(futures)
+                            .onComplete(ar -> vertx.eventBus().publish(Constants.EVENT_ADDRESS, finalFileName));
                 }
 
                 if (!lastPolledObjects.isEmpty())
                 {
                     for (var IP : lastPolledObjects)
                     {
-                        Instant.ofEpochMilli(IP.getLong("nextPollTime")).plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
+                        Instant.ofEpochMilli(IP.getLong("nextPollTime"))
+                                .plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
 
                         objects.add(IP);
                     }
@@ -103,10 +109,12 @@ public class PingScheduler extends AbstractVerticle
         });
     }
 
-    public void ping(String ip, String fileName)
+    public Future<Void> ping(String ip, String fileName)
     {
+        Promise<Void> promise = Promise.promise();
         try
         {
+
             executor.executeBlocking(() ->
             {
                 var output = Util.executeCommand("fping", "-c", String.valueOf(NO_OF_PACKETS), "-q",
@@ -124,27 +132,39 @@ public class PingScheduler extends AbstractVerticle
                                         Buffer.buffer(result.put("ip", ip)
                                                 .put("timestamp", LocalDateTime.now().toString())
                                                 .encode() + "\n"))
-                                .onFailure(fileWriteResult ->
+                                .onComplete(fileWriteResult ->
                                 {
                                     try
                                     {
-                                        logger.error(fileWriteResult.getMessage());
+                                        if (fileWriteResult.succeeded())
+                                        {
+                                            promise.complete();
+                                        }
+                                        else
+                                        {
+                                            promise.fail(fileWriteResult.cause());
+                                            logger.error(fileWriteResult.cause().getMessage());
+                                        }
                                     }
                                     catch (Exception exception)
                                     {
+                                        promise.fail(fileWriteResult.cause());
                                         logger.error(exception.getMessage(), exception);
                                     }
                                 });
                     }
                 }
-
+                else
+                    promise.complete();
                 return Future.succeededFuture();
             });
         }
         catch (Exception exception)
         {
+            promise.fail(exception);
             logger.error(exception.getMessage(), exception);
         }
+        return promise.future();
 
     }
 

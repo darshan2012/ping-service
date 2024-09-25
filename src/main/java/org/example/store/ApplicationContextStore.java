@@ -19,7 +19,7 @@ public class ApplicationContextStore
 {
     private static final Logger logger = LoggerFactory.getLogger(ApplicationContextStore.class);
 
-    private static Map<ApplicationType, JsonObject> contexts = new HashMap<>();
+    private static final Map<ApplicationType, JsonObject> contexts = new HashMap<>();
 
     private final static String FILE_PATH = "data/data/context.txt";
 
@@ -38,11 +38,6 @@ public class ApplicationContextStore
     public static Set<ApplicationType> getApplications()
     {
         return contexts.keySet();
-    }
-
-    public static int getApplicationCount()
-    {
-        return contexts.size();
     }
 
     public static Future<Void> write()
@@ -95,6 +90,7 @@ public class ApplicationContextStore
         if (!Main.vertx.fileSystem().existsBlocking(FILE_PATH))
         {
             promise.complete();
+
             return promise.future();
         }
         Main.vertx.executeBlocking(future ->
@@ -108,6 +104,7 @@ public class ApplicationContextStore
                         if (result.result().toString().isEmpty())
                         {
                             promise.complete();
+
                             return;
                         }
                         JsonObject fileContent = result.result().toJsonObject();
