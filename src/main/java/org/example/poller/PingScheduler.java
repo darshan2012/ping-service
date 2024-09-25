@@ -126,7 +126,12 @@ public class PingScheduler extends AbstractVerticle
                         Buffer buffer = Buffer.buffer();
                         for (var output : outputs)
                         {
-                            buffer.appendBuffer(Buffer.buffer(processPingResult(output).encode() + "\n"));
+                            var processedOutput = processPingResult(output);
+
+                            if (processedOutput != null)
+                            {
+                                buffer.appendBuffer(Buffer.buffer(processedOutput.encode() + "\n"));
+                            }
                         }
 
                         String fileName = Constants.BASE_DIR + "/" + LocalDateTime.now().format(FILE_NAME_FORMATTER) + ".txt";
@@ -161,6 +166,7 @@ public class PingScheduler extends AbstractVerticle
         catch (Exception exception)
         {
             promise.fail(exception);
+
             logger.error(exception.getMessage(), exception);
         }
 

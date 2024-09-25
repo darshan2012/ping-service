@@ -22,7 +22,7 @@ public class Util
     private final static String IP_V4_REGEX = "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$";
     private final static String IP_V6_REGEX = "^([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:)$";
 
-    public final static String PING_OUTPUT_REGEX = "(\\S+) : xmt/rcv/%loss = (\\d+)/(\\d+)/(\\d+)%, min/avg/max = ([0-9.]+)/([0-9.]+)/([0-9.]+)";
+    public final static String PING_OUTPUT_REGEX = "(\\S+)\\s+:\\s+xmt/rcv/%loss\\s+=\\s+(\\d+)/(\\d+)/(\\d+)%,\\s+min/avg/max\\s+=\\s+([0-9.]+)/([0-9.]+)/([0-9.]+)";
     public final static Pattern PING_OUTPUT_PATTERN = Pattern.compile(PING_OUTPUT_REGEX);
 
     private final static Pattern IP_V4_PATTERN = Pattern.compile(IP_V4_REGEX);
