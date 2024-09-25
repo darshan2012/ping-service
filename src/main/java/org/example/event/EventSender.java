@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 public class EventSender extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(EventSender.class);
-    private static final int EVENT_INTERVAL = 60000 ; // 5 minutes
+    private static final int EVENT_INTERVAL = 60000; // 5 minutes
     private static final int MAX_EVENTS = 10; // 100 events in 5 minutes
     private static final int PING_INTERVAL = 3000; // Ping every 3 seconds
     private static final int PING_TIMEOUT = 5000;
@@ -239,7 +239,7 @@ public class EventSender extends AbstractVerticle
 
                     var buffer = Buffer.buffer();
 
-                    AtomicInteger currentOffset = new AtomicInteger( applicationContext.getInteger("offset",
+                    AtomicInteger currentOffset = new AtomicInteger(applicationContext.getInteger("offset",
                             0));
 
                     asyncFile.setReadPos(currentOffset.get());
@@ -386,45 +386,50 @@ public class EventSender extends AbstractVerticle
             logger.info("Connected to ping socket at tcp://" + applicationContext.getString(
                     "ip") + ":" + applicationContext.getInteger("pingPort"));
 
-            vertx.setPeriodic(PING_INTERVAL, id ->{
-                try
+            new Thread(() ->
+            {
+                while (true)
                 {
-                    var pong = pingSocket.recvStr();
+                    try
+                    {
+                        var pong = pingSocket.recvStr();
 
-                    if ("pong".equals(pong))
-                    {
-                        timeStamp = System.currentTimeMillis();
+                        if ("pong".equals(pong))
+                        {
+                            timeStamp = System.currentTimeMillis();
+                        }
+                        else
+                        {
+                            logger.error("Unexpected response: " + pong);
+                        }
                     }
-                    else
+                    catch (Exception exception)
                     {
-                        logger.error("Unexpected response: " + pong);
+                        logger.error(exception.getMessage(), exception);
                     }
                 }
-                catch (Exception exception)
-                {
-                    logger.error(exception.getMessage(),exception);
-                }
-            });
+            }).start();
         }
         catch (Exception exception)
+
         {
             logger.error("Error while setting up ping-pong check: ", exception);
         }
     }
 
-private boolean isAlive()
-{
-    return System.currentTimeMillis() - timeStamp <= PING_TIMEOUT;
-}
-
-
-@Override
-public void stop() throws Exception
-{
-    if (pushSocket != null)
+    private boolean isAlive()
     {
-        pushSocket.close();
+        return System.currentTimeMillis() - timeStamp <= PING_TIMEOUT;
     }
-    super.stop();
-}
+
+
+    @Override
+    public void stop() throws Exception
+    {
+        if (pushSocket != null)
+        {
+            pushSocket.close();
+        }
+        super.stop();
+    }
 }

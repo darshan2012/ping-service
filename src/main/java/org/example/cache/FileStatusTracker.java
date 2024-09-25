@@ -101,93 +101,100 @@ public class FileStatusTracker
 
         Main.vertx.fileSystem().exists(FILE_PATH, existResult ->
         {
-            if (existResult.succeeded() && existResult.result())
+            try
             {
-                var options = new OpenOptions().setRead(true);
-
-                Main.vertx.fileSystem().open(FILE_PATH, options, openResult ->
+                if (existResult.succeeded() && existResult.result())
                 {
-                    if (openResult.succeeded())
+                    var options = new OpenOptions().setRead(true);
+
+                    Main.vertx.fileSystem().open(FILE_PATH, options, openResult ->
                     {
-                        var file = openResult.result();
-
-                        var totalBuffer = Buffer.buffer();
-
-                        ReadStream<Buffer> readStream = file;
-
-                        readStream.handler(totalBuffer::appendBuffer);
-
-                        readStream.endHandler(v ->
+                        if (openResult.succeeded())
                         {
-                            try
+                            var file = openResult.result();
+
+                            var totalBuffer = Buffer.buffer();
+
+                            ReadStream<Buffer> readStream = file;
+
+                            readStream.handler(totalBuffer::appendBuffer);
+
+                            readStream.endHandler(v ->
                             {
-                                byte[] bytes = totalBuffer.getBytes();
+                                try
+                                {
+                                    byte[] bytes = totalBuffer.getBytes();
 
-                                var byteArrayInputStream = new ByteArrayInputStream(bytes);
+                                    var byteArrayInputStream = new ByteArrayInputStream(bytes);
 
-                                var objectInputStream = new ObjectInputStream(byteArrayInputStream);
+                                    var objectInputStream = new ObjectInputStream(byteArrayInputStream);
 
-                                ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> loadedStatuses =
-                                        (ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>>) objectInputStream.readObject();
+                                    ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>> loadedStatuses =
+                                            (ConcurrentHashMap<String, HashMap<ApplicationType, Boolean>>) objectInputStream.readObject();
 
-                                fileStatuses.clear();
+                                    fileStatuses.clear();
 
-                                fileStatuses.putAll(loadedStatuses);
+                                    fileStatuses.putAll(loadedStatuses);
 
-                                logger.info("File status loaded from {}", FILE_PATH);
+                                    logger.info("File status loaded from {}", FILE_PATH);
 
-                                promise.complete();
-                            }
-                            catch (IOException | ClassNotFoundException e)
+                                    promise.complete();
+                                }
+                                catch (IOException | ClassNotFoundException e)
+                                {
+                                    logger.error("Error loading file status from {}: {}", FILE_PATH, e.getMessage());
+
+                                    promise.fail(e);
+                                }
+                                finally
+                                {
+                                    file.close();
+                                }
+                            });
+
+                            readStream.exceptionHandler(throwable ->
                             {
-                                logger.error("Error loading file status from {}: {}", FILE_PATH, e.getMessage());
+                                logger.error("Error reading file {}: {}", FILE_PATH, throwable.getMessage());
 
-                                promise.fail(e);
-                            }
-                            finally
-                            {
                                 file.close();
-                            }
-                        });
 
-                        readStream.exceptionHandler(throwable ->
+                                promise.fail(throwable);
+                            });
+
+                        }
+                        else
                         {
-                            logger.error("Error reading file {}: {}", FILE_PATH, throwable.getMessage());
+                            logger.error("Failed to open file {}: {}", FILE_PATH, openResult.cause().getMessage());
 
-                            file.close();
-
-                            promise.fail(throwable);
-                        });
-
-                    }
-                    else
-                    {
-                        logger.error("Failed to open file {}: {}", FILE_PATH, openResult.cause().getMessage());
-
-                        promise.fail(openResult.cause());
-                    }
-                });
-            }
-            else
-            {
-                if (existResult.succeeded())
-                {
-                    logger.warn("Status file does not exist. Starting with empty status.");
-
-                    promise.complete();
+                            promise.fail(openResult.cause());
+                        }
+                    });
                 }
                 else
                 {
-                    logger.error("Failed to check if file exists: {}", existResult.cause().getMessage());
+                    if (existResult.succeeded())
+                    {
+                        logger.warn("Status file does not exist. Starting with empty status.");
 
-                    promise.fail(existResult.cause());
+                        promise.complete();
+                    }
+                    else
+                    {
+                        logger.error("Failed to check if file exists: {}", existResult.cause().getMessage());
+
+                        promise.fail(existResult.cause());
+                    }
                 }
+
+            }
+            catch (Exception exception)
+            {
+                logger.error(exception.getMessage(),exception);
             }
         });
 
         return promise.future();
     }
-
 
     public static void write()
     {
@@ -209,27 +216,34 @@ public class FileStatusTracker
 
                 Main.vertx.fileSystem().open(FILE_PATH, options, openResult ->
                 {
-                    if (openResult.succeeded())
+                    try
                     {
-                        var file = openResult.result();
-                        file.write(buffer, 0, writeResult ->
+                        if (openResult.succeeded())
                         {
-                            if (writeResult.succeeded())
+                            var file = openResult.result();
+                            file.write(buffer, 0, writeResult ->
                             {
-                                logger.info("File status written to {}", FILE_PATH);
-                            }
-                            else
-                            {
-                                logger.error("Failed to write file status to {}: {}", FILE_PATH,
-                                        writeResult.cause().getMessage());
-                            }
-                            file.close();
-                        });
+                                if (writeResult.succeeded())
+                                {
+                                    logger.info("File status written to {}", FILE_PATH);
+                                }
+                                else
+                                {
+                                    logger.error("Failed to write file status to {}: {}", FILE_PATH,
+                                            writeResult.cause().getMessage());
+                                }
+                                file.close();
+                            });
+                        }
+                        else
+                        {
+                            logger.error("Failed to open file for writing {}: {}", FILE_PATH,
+                                    openResult.cause().getMessage());
+                        }
                     }
-                    else
+                    catch (Exception exception)
                     {
-                        logger.error("Failed to open file for writing {}: {}", FILE_PATH,
-                                openResult.cause().getMessage());
+                        logger.error(exception.getMessage(),exception);
                     }
                 });
             }
@@ -239,9 +253,13 @@ public class FileStatusTracker
             }
 
         }
-        catch (IOException e)
+        catch (IOException exception)
         {
-            logger.error("Error preparing file status for writing: {}", e.getMessage());
+            logger.error("Error preparing file status for writing: {}", exception.getMessage());
+        }
+        catch (Exception exception)
+        {
+            logger.error(exception.getMessage(),exception);
         }
     }
 

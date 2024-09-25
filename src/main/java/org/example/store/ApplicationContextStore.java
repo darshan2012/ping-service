@@ -114,11 +114,7 @@ public class ApplicationContextStore
 
                         for (String key : fileContent.fieldNames())
                         {
-                            ApplicationType appType = ApplicationType.valueOf(key);
-
-                            JsonObject jsonObject = fileContent.getJsonObject(key);
-
-                            contexts.put(appType, jsonObject);
+                            contexts.put(ApplicationType.valueOf(key), fileContent.getJsonObject(key));
                         }
 
                         logger.info("Contexts successfully read from file.");
