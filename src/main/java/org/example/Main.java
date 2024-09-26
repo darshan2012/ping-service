@@ -21,6 +21,11 @@ public class Main
     {
         try
         {
+
+            //setting up the directories if not exist
+            vertx.fileSystem().mkdirsBlocking(Constants.BASE_DIR + "/data");
+
+
             ApplicationContextStore.read()
                     .compose(result -> FileStatusTracker.read())
                     .compose(result ->
