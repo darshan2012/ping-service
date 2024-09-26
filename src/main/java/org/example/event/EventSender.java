@@ -302,7 +302,7 @@ public class EventSender extends AbstractVerticle
                                 {
                                     logger.info("Deleting file {}", fileName);
 
-                                    vertx.fileSystem().delete(fileName).onComplete(result ->
+                                    vertx.fileSystem().delete(Constants.BASE_DIR + "/" + fileName).onComplete(result ->
                                     {
                                         if (result.succeeded())
                                         {
