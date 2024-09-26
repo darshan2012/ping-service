@@ -33,7 +33,11 @@ public class ApplicationContextStore
     {
         contexts.putIfAbsent(applicationType, new JsonObject());
 
-        contexts.get(applicationType).put("ip", ip).put("port", port).put("pingPort", pingPort);
+        contexts.get(applicationType).put("ip", ip).put("port", port).put("ping.port", pingPort);
+    }
+
+    public static int getApplicationCount() {
+        return contexts.size();
     }
 
     public static Set<ApplicationType> getApplications()

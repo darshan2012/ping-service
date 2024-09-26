@@ -41,6 +41,9 @@ public class Util
     public static String executeCommand(List<String> commands)
     {
         Process process = null;
+
+        String outputLine = "";
+
         try
         {
             var processBuilder = new ProcessBuilder(commands);
@@ -56,14 +59,14 @@ public class Util
                 return "";
             }
 
-            String outputLine;
-
             while ((outputLine = stdInput.readLine()) != null)
             {
                 commandOutput.append(outputLine + Constants.NEW_LINE_CHAR);
             }
 
-            return commandOutput.toString();
+            outputLine = commandOutput.toString();
+
+            commandOutput.setLength(0);
         }
         catch (Exception exception)
         {
@@ -73,23 +76,12 @@ public class Util
         }
         finally
         {
-            try
+            if (process != null)
             {
-                if (process != null)
-                {
-                    process.getInputStream().close();
-
-                    process.getErrorStream().close();
-
-                    process.getOutputStream().close();
-                }
-                commandOutput.setLength(0);
-            }
-            catch (Exception exception)
-            {
-                logger.error("Error in closing process streams: ",exception);
+                process.destroyForcibly();
             }
         }
+        return outputLine;
     }
 
     public static Future<Boolean> writeToFile(String filename, Buffer data)

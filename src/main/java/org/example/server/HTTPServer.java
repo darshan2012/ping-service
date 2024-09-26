@@ -44,7 +44,7 @@ public class HTTPServer extends AbstractVerticle
 
                     var type = requestBody.getString("type");
 
-                    var pingPort = requestBody.getInteger("pingPort");
+                    var pingPort = requestBody.getInteger("ping.port");
 
                     if (ip == null || port == null || type == null || pingPort == null)
                     {

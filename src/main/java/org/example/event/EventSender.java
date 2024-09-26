@@ -115,10 +115,10 @@ public class EventSender extends AbstractVerticle
 
             Collections.sort(files);
 
-            if (applicationContext.getString("currentFile") == null || applicationContext.getString("currentFile")
+            if (applicationContext.getString("current.file") == null || applicationContext.getString("current.file")
                     .isEmpty())
             {
-                applicationContext.put("currentFile", files.get(0));
+                applicationContext.put("current.file", files.get(0));
 
                 applicationContext.put("offset", 0);
             }
@@ -131,13 +131,17 @@ public class EventSender extends AbstractVerticle
 
                     if (matcher.find())
                     {
-                        var extractedPath = matcher.group(1);
+                        var extractedPath = matcher.group();
+
+                        logger.debug("{} file after regex {} for application type {}", file, extractedPath, applicationType);
 
                         //check if the file is already read by the application and if it is then dont add it to queue
                         if (FileStatusTracker.getFileStatus(extractedPath, applicationType))
                         {
                             continue;
                         }
+
+                        logger.debug("{} file added to file queue for app type {}", extractedPath, applicationType);
 
                         fileQueue.add(extractedPath);
                     }
@@ -265,7 +269,7 @@ public class EventSender extends AbstractVerticle
                                 else
                                 {
                                     // If event limit is reached, store the current file and offset
-                                    applicationContext.put("currentFile", fileName).put("offset", currentOffset.get());
+                                    applicationContext.put("current.file", fileName).put("offset", currentOffset.get());
 
                                     return;
                                 }
@@ -289,7 +293,7 @@ public class EventSender extends AbstractVerticle
                                 logger.info(
                                         "completed sending {} events to {}", MAX_EVENTS, applicationType.toString());
                                 // hit the event limit, store file and offset
-                                applicationContext.put("currentFile", fileName).put("offset", currentOffset.get());
+                                applicationContext.put("current.file", fileName).put("offset", currentOffset.get());
                             }
                             else
                             {
@@ -320,7 +324,7 @@ public class EventSender extends AbstractVerticle
                                 fileQueue.poll();
 
                                 if (fileQueue.peek() != null)
-                                    applicationContext.put("currentFile", fileQueue.peek()).put("offset", 0);
+                                    applicationContext.put("current.file", fileQueue.peek()).put("offset", 0);
 
                                 processNextFile(events);
                             }
@@ -383,10 +387,10 @@ public class EventSender extends AbstractVerticle
         try
         {
             pingSocket.connect(
-                    "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("pingPort"));
+                    "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("ping.port"));
 
             logger.info("Connected to ping socket at tcp://{}:{}", applicationContext.getString(
-                    "ip"), applicationContext.getInteger("pingPort"));
+                    "ip"), applicationContext.getInteger("ping.port"));
 
             new Thread(() ->
             {

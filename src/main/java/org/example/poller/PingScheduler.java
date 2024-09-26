@@ -10,6 +10,7 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
+import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,26 +67,29 @@ public class PingScheduler extends AbstractVerticle
                 }
                 if (!batch.isEmpty())
                 {
-                    ping(batch).onComplete(result ->
+                    if(ApplicationContextStore.getApplicationCount() > 0)
                     {
-                        try
+                        ping(batch).onComplete(result ->
                         {
-                            if (result.succeeded())
+                            try
                             {
-                                FileStatusTracker.addFile(result.result());
+                                if (result.succeeded())
+                                {
+                                    FileStatusTracker.addFile(result.result());
 
-                                vertx.eventBus().publish(Constants.EVENT_NEW_FILE, result.result());
+                                    vertx.eventBus().publish(Constants.EVENT_NEW_FILE, result.result());
+                                }
+                                else
+                                {
+                                    logger.error("Error in processing batch: ", result.cause());
+                                }
                             }
-                            else
+                            catch (Exception exception)
                             {
-                                logger.error("Error in processing batch: ", result.cause());
+                                logger.error(exception.getMessage(), exception);
                             }
-                        }
-                        catch (Exception exception)
-                        {
-                            logger.error(exception.getMessage(), exception);
-                        }
-                    });
+                        });
+                    }
                 }
                 if (!lastPolledObjects.isEmpty())
                 {
