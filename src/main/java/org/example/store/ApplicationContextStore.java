@@ -51,7 +51,7 @@ public class ApplicationContextStore
             {
                 Util.createFileIfNotExist(FILE_PATH);
 
-                JsonObject context = new JsonObject();
+                var context = new JsonObject();
 
                 for (Map.Entry<ApplicationType, JsonObject> entry : contexts.entrySet())
                 {
@@ -63,7 +63,7 @@ public class ApplicationContextStore
                 {
                     if (result.succeeded())
                     {
-                        logger.info("Contexts successfully written to file.");
+                        logger.debug("Contexts successfully written to file.{} {}",FILE_PATH, context.encodePrettily());
 
                         future.complete();
                     }
@@ -111,7 +111,7 @@ public class ApplicationContextStore
                                 return;
                             }
 
-                            JsonObject fileContent = result.result().toJsonObject();
+                            var fileContent = result.result().toJsonObject();
 
                             contexts.clear();
 

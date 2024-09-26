@@ -24,9 +24,9 @@ public class HTTPServer extends AbstractVerticle
     {
         try
         {
-            HttpServer server = vertx.createHttpServer();
+            var server = vertx.createHttpServer();
 
-            Router router = Router.router(vertx);
+            var router = Router.router(vertx);
 
             logger.info("Starting HTTP server on port 8080...");
 
