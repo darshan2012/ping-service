@@ -34,17 +34,16 @@ public class PingScheduler extends AbstractVerticle
 
     private static final List<JsonObject> lastPolledObjects = new ArrayList<>();
 
-    private final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2,
-            TimeUnit.MINUTES);
+    private final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
 
     @Override
     public void start()
     {
         vertx.eventBus().<String>localConsumer(Constants.OBJECT_PROVISION, message ->
 
-                objects.add(new JsonObject().put("ip", message.body())
-                        .put("next.poll.time", Instant.now().plus(INTERVAL,
-                                TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
+                objects.add(new JsonObject()
+                        .put("ip", message.body())
+                        .put("next.poll.time", Instant.now().plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
         );
 
         startPolling();
@@ -95,11 +94,11 @@ public class PingScheduler extends AbstractVerticle
                 {
                     for (var object : lastPolledObjects)
                     {
-                        Instant.ofEpochMilli(object.getLong("next.poll.time"))
-                                .plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
+                        Instant.ofEpochMilli(object.getLong("next.poll.time")).plus(INTERVAL, TimeUnit.MILLISECONDS.toChronoUnit());
 
                         objects.add(object);
                     }
+
                     lastPolledObjects.clear();
                 }
             }

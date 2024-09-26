@@ -40,6 +40,10 @@ public class ApplicationContextStore
         return contexts.size();
     }
 
+    public static boolean contains(ApplicationType applicationType){
+        return contexts.containsKey(applicationType);
+    }
+
     public static Set<ApplicationType> getApplications()
     {
         return contexts.keySet();
@@ -59,8 +63,7 @@ public class ApplicationContextStore
 
                 for (Map.Entry<ApplicationType, JsonObject> entry : contexts.entrySet())
                 {
-                    context.put(entry.getKey().toString(),
-                            entry.getValue());
+                    context.put(entry.getKey().toString(), entry.getValue());
                 }
 
                 Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(context.encodePrettily()), result ->
@@ -79,9 +82,9 @@ public class ApplicationContextStore
                     }
                 });
             }
-            catch (Exception e)
+            catch (Exception exception)
             {
-                future.fail(e);
+                future.fail(exception);
             }
         }, false, promise);
 
@@ -128,11 +131,11 @@ public class ApplicationContextStore
 
                             future.complete();
                         }
-                        catch (Exception e)
+                        catch (Exception exception)
                         {
                             logger.error("Error while reading contexts from file: ", e);
 
-                            future.fail(e);
+                            future.fail(exception);
                         }
                     }
                     else

@@ -1,6 +1,7 @@
 package org.example;
 
 import io.vertx.core.*;
+import org.example.event.EventSender;
 import org.example.server.HTTPServer;
 import org.example.cache.FileStatusTracker;
 import org.example.poller.PingScheduler;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.Set;
 
 public class Main
 {
@@ -27,15 +29,37 @@ public class Main
             ApplicationContextStore.read()
                     .compose(result -> FileStatusTracker.read())
                     .compose(result -> vertx.deployVerticle(new HTTPServer()))
-                    .compose(result -> vertx.deployVerticle(new PingScheduler()).compose(deployment ->
+                    .compose(result -> vertx.deployVerticle(new PingScheduler()))
+                    .compose(deployment ->
+                    {
+                        UI();
+
+                        return Future.succeededFuture();
+                    })
+                    .compose(result ->
+                    {
+                        var applications = ApplicationContextStore.getApplications();
+
+                        if (applications != null)
+                        {
+                            applications.forEach(application ->
                             {
-                                logger.info("PingScheduler deployed successfully.");
+                                vertx.deployVerticle(new EventSender(application), deployResult ->
+                                {
+                                    if (deployResult.succeeded())
+                                    {
+                                        logger.info("EventSenderVerticle deployed successfully with deployment ID: {}", deployResult.result());
+                                    }
+                                    else
+                                    {
+                                        logger.error("Failed to deploy EventSenderVerticle", deployResult.cause());
+                                    }
+                                });
+                            });
+                        }
 
-                                UI();
-
-                                return Future.succeededFuture();
-                            })
-                    )
+                        return Future.succeededFuture();
+                    })
                     .compose(result ->
                     {
                         vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
@@ -58,50 +82,57 @@ public class Main
     {
         new Thread(() ->
         {
-            logger.info("new thread for ui started");
-
-            var inputReader = new BufferedReader(new InputStreamReader(System.in));
-
-            while (true)
+            try
             {
-                try
+                logger.info("new thread for ui started");
+
+                var inputReader = new BufferedReader(new InputStreamReader(System.in));
+
+                while (true)
                 {
-                    System.out.print("Enter valid IP: ");
-
-                    var ip = inputReader.readLine();
-
-                    if (!Util.isValidIp(ip))
+                    try
                     {
-                        System.out.println("Invalid IP: " + ip);
+                        System.out.print("Enter valid IP: ");
 
-                        continue;
-                    }
-                    System.out.println("Checking if host [ " + ip + "] is up...");
+                        var ip = inputReader.readLine();
 
-                    if (Util.isHostAlive(ip))
-                    {
-                        System.out.println("Host [ " + ip + " ] is up.");
-
-                        System.out.print("Do you want to provision? [Y/N]: ");
-
-                        var provision = inputReader.readLine();
-
-                        if (provision.equalsIgnoreCase("y"))
+                        if (!Util.isValidIp(ip))
                         {
-                            System.out.println("Provisioning started for IP: " + ip);
+                            System.out.println("Invalid IP: " + ip);
 
-                            Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, ip);
+                            continue;
+                        }
+                        System.out.println("Checking if host [ " + ip + "] is up...");
+
+                        if (Util.isHostAlive(ip))
+                        {
+                            System.out.println("Host [ " + ip + " ] is up.");
+
+                            System.out.print("Do you want to provision? [Y/N]: ");
+
+                            var provision = inputReader.readLine();
+
+                            if (provision.equalsIgnoreCase("y"))
+                            {
+                                System.out.println("Provisioning started for IP: " + ip);
+
+                                Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, ip);
+                            }
+                        }
+                        else
+                        {
+                            System.out.println("Host [ " + ip + "] is down.");
                         }
                     }
-                    else
+                    catch (Exception exception)
                     {
-                        System.out.println("Host [ " + ip + "] is down.");
+                        logger.error("Error occurred while processing input: ", exception);
                     }
                 }
-                catch (Exception exception)
-                {
-                    logger.error("Error occurred while processing input: ", exception);
-                }
+            }
+            catch (Exception exception)
+            {
+                logger.error(exception.getMessage(),exception);
             }
         }).start();
     }

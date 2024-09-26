@@ -25,17 +25,23 @@ import java.util.regex.Pattern;
 public class EventSender extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(EventSender.class);
+
     private static final int EVENT_INTERVAL = 60000 * 5; // 5 minutes
+
     private static final int MAX_EVENTS = 100; // 100 events in 5 minutes
+
     private static final int PING_TIMEOUT = 5000;
 
     private final static Pattern FILE_NAME_PATTERN = Pattern.compile("[^/]+$");
 
     private final ApplicationType applicationType;
+
     private final JsonObject applicationContext;
 
     private final static ZContext context = new ZContext();
+
     private final ZMQ.Socket pushSocket = context.createSocket(SocketType.PUSH);
+
     private final ZMQ.Socket pingSocket = context.createSocket(SocketType.PULL);
 
     private long timeStamp = System.currentTimeMillis();
@@ -72,7 +78,7 @@ public class EventSender extends AbstractVerticle
             {
                 if (dirResult.succeeded())
                 {
-                    processDirectoryResults(dirResult.result()).compose(context ->
+                    processFiles(dirResult.result()).compose(context ->
                     {
                         try
                         {
@@ -102,7 +108,7 @@ public class EventSender extends AbstractVerticle
         });
     }
 
-    private Future<Void> processDirectoryResults(List<String> files)
+    private Future<Void> processFiles(List<String> files)
     {
         try
         {
@@ -187,9 +193,7 @@ public class EventSender extends AbstractVerticle
                     {
                         logger.info("Connection is Alive {}", applicationType);
 
-                        var events = new AtomicInteger(0);
-
-                        processNextFile(events);
+                        processNextFile(new AtomicInteger(0));
                     }
                     else
                     {
@@ -214,7 +218,6 @@ public class EventSender extends AbstractVerticle
         {
             if (!fileQueue.isEmpty() && events.get() < MAX_EVENTS)
             {
-
                 var currentFile = fileQueue.peek();
 
                 if (currentFile != null)
@@ -290,8 +293,8 @@ public class EventSender extends AbstractVerticle
 
                             if (events.get() >= MAX_EVENTS)
                             {
-                                logger.info(
-                                        "completed sending {} events to {}", MAX_EVENTS, applicationType.toString());
+                                logger.info("completed sending {} events to {}", MAX_EVENTS, applicationType.toString());
+
                                 // hit the event limit, store file and offset
                                 applicationContext.put("current.file", fileName).put("offset", currentOffset.get());
                             }
@@ -356,11 +359,11 @@ public class EventSender extends AbstractVerticle
     {
         try
         {
-            var json = new JsonObject(line);
-
             // Check if the receiving application is connected before sending
             if (isAlive())
             {
+                var json = new JsonObject(line);
+
                 pushSocket.send(json.encode());
 
                 logger.info("Sent JSON event: {}", json.encode());
@@ -386,11 +389,9 @@ public class EventSender extends AbstractVerticle
     {
         try
         {
-            pingSocket.connect(
-                    "tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("ping.port"));
+            pingSocket.connect("tcp://" + applicationContext.getString("ip") + ":" + applicationContext.getInteger("ping.port"));
 
-            logger.info("Connected to ping socket at tcp://{}:{}", applicationContext.getString(
-                    "ip"), applicationContext.getInteger("ping.port"));
+            logger.info("Connected to ping socket at tcp://{}:{}", applicationContext.getString("ip"), applicationContext.getInteger("ping.port"));
 
             new Thread(() ->
             {

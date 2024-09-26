@@ -81,6 +81,7 @@ public class Util
                 process.destroyForcibly();
             }
         }
+
         return outputLine;
     }
 
@@ -128,6 +129,7 @@ public class Util
                 logger.error(exception.getMessage(), exception);
             }
         });
+
         return promise.future();
     }
 
@@ -183,6 +185,7 @@ public class Util
             if (!Main.vertx.fileSystem().existsBlocking(path))
             {
                 Main.vertx.fileSystem().createFileBlocking(path);
+
                 return true;
             }
         }
@@ -190,6 +193,7 @@ public class Util
         {
             logger.error(exception.getMessage(),exception);
         }
+
         return false;
     }
 }
