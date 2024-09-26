@@ -110,8 +110,6 @@ public class PingScheduler extends AbstractVerticle
     {
         Promise<String> promise = Promise.promise();
 
-        System.out.println(batch);
-
         try
         {
             batch.add(0, "fping");
@@ -124,7 +122,7 @@ public class PingScheduler extends AbstractVerticle
                 try
                 {
                     var output = Util.executeCommand(batch);
-                    System.out.println("output : " + output);
+
                     if (!output.isEmpty())
                     {
                         var buffer = Buffer.buffer();
