@@ -1,16 +1,22 @@
 package org.example;
 
 import io.vertx.core.*;
-import org.example.event.EventSender;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import org.example.event.FileManager;
+import org.example.event.FileService;
+import org.example.poll.Poller;
+import org.example.poll.Scheduler;
 import org.example.server.HTTPServer;
 import org.example.cache.FileStatusTracker;
-import org.example.poller.PingScheduler;
 import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.zeromq.ZContext;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.HashSet;
 import java.util.Set;
 
 public class Main
@@ -18,6 +24,8 @@ public class Main
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public final static Vertx vertx = Vertx.vertx();
+
+    public final static ZContext zContext = new ZContext();
 
     public static void main(String[] args)
     {
@@ -27,9 +35,35 @@ public class Main
             vertx.fileSystem().mkdirsBlocking(Constants.BASE_DIR + "/data");
 
             ApplicationContextStore.read()
-                    .compose(result -> FileStatusTracker.read())
+                    .compose(result -> vertx.deployVerticle(new FileService(), new DeploymentOptions().setThreadingModel(ThreadingModel.WORKER)))
+                    .compose(result -> loadFiles())
                     .compose(result -> vertx.deployVerticle(new HTTPServer()))
-                    .compose(result -> vertx.deployVerticle(new PingScheduler()))
+                    .compose(result ->
+                    {
+                        var applications = ApplicationContextStore.getApplications();
+
+                        if (!applications.isEmpty())
+                        {
+                            applications.forEach(application ->
+                            {
+                                vertx.deployVerticle(new FileManager(application, ApplicationContextStore.getAppContext(application)), deployResult ->
+                                {
+                                    if (deployResult.succeeded())
+                                    {
+                                        logger.info("file manager deployed successfully with deployment ID: {}", deployResult.result());
+                                    }
+                                    else
+                                    {
+                                        logger.error("Failed to deploy file manager", deployResult.cause());
+                                    }
+                                });
+                            });
+                        }
+
+                        return Future.succeededFuture();
+                    })
+                    .compose(result -> vertx.deployVerticle(new Scheduler()))
+                    .compose(result -> vertx.deployVerticle(new Poller()))
                     .compose(deployment ->
                     {
                         UI();
@@ -38,35 +72,18 @@ public class Main
                     })
                     .compose(result ->
                     {
-                        var applications = ApplicationContextStore.getApplications();
-
-                        if (applications != null)
-                        {
-                            applications.forEach(application ->
-                            {
-                                vertx.deployVerticle(new EventSender(application), deployResult ->
-                                {
-                                    if (deployResult.succeeded())
-                                    {
-                                        logger.info("EventSenderVerticle deployed successfully with deployment ID: {}", deployResult.result());
-                                    }
-                                    else
-                                    {
-                                        logger.error("Failed to deploy EventSenderVerticle", deployResult.cause());
-                                    }
-                                });
-                            });
-                        }
-
-                        return Future.succeededFuture();
-                    })
-                    .compose(result ->
-                    {
                         vertx.setPeriodic(Constants.FILE_STORE_INTERVAL, id ->
                         {
-                            ApplicationContextStore.write();
+                            try
+                            {
+                                ApplicationContextStore.write();
 
-                            FileStatusTracker.write();
+                                FileStatusTracker.write();
+                            }
+                            catch (Exception exception)
+                            {
+                                logger.error(exception.getMessage(), exception);
+                            }
                         });
                         return Future.succeededFuture();
                     })
@@ -76,6 +93,88 @@ public class Main
         {
             logger.error("Critical error in the main loop: ", exception);
         }
+    }
+
+    private static Future<Void> loadFiles()
+    {
+        Promise<Void> promise = Promise.promise();
+
+        try
+        {
+            vertx.executeBlocking(() ->
+            {
+                try
+                {
+                    if (!vertx.fileSystem().existsBlocking(Constants.FILE_STATUS_PATH))
+                    {
+                        logger.warn("File does not exist: {}", Constants.FILE_STATUS_PATH);
+
+                        return Future.succeededFuture();
+                    }
+
+                    var buffer = Main.vertx.fileSystem().readFileBlocking(Constants.FILE_STATUS_PATH);
+
+                    var jsonObject = new JsonObject(buffer);
+
+                    if (buffer.toString().equals("{}"))
+                    {
+                        return Future.succeededFuture();
+                    }
+
+                    jsonObject.forEach(entry ->
+                    {
+                        try
+                        {
+                            Set<Constants.ApplicationType> appTypes = new HashSet<>();
+
+                            ((JsonArray) entry.getValue()).forEach(
+                                    app -> appTypes.add(Constants.ApplicationType.valueOf((String) app))
+                            );
+
+                            FileStatusTracker.addFile(entry.getKey(), appTypes);
+
+                            logger.info("File loading {} ", entry.getKey());
+
+                            vertx.eventBus().send(Constants.EVENT_OPEN_FILE,new JsonObject().put("file.name",entry.getKey()));
+                        }
+                        catch (Exception exception)
+                        {
+                            logger.error("Error while setting up file {}",entry.getKey());
+                        }
+                    });
+
+                    return Future.succeededFuture();
+                }
+                catch (Exception exception)
+                {
+                    logger.error(exception.getMessage(), exception);
+
+                    return Future.failedFuture(exception);
+                }
+            }).onComplete(result ->
+            {
+                if (result.succeeded())
+                {
+                    logger.info("{} file read successfully", Constants.FILE_STATUS_PATH);
+
+                    promise.complete();
+                }
+                else
+                {
+                    logger.error("Error while reading file {}", Constants.FILE_STATUS_PATH, result.cause());
+
+                    promise.fail(result.cause());
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            logger.error("Error while opening the file {}", Constants.FILE_STATUS_PATH, exception);
+
+            promise.fail(exception);
+        }
+
+        return promise.future();
     }
 
     private static void UI()
@@ -116,7 +215,7 @@ public class Main
                             {
                                 System.out.println("Provisioning started for IP: " + ip);
 
-                                Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, ip);
+                                Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, new JsonObject().put("ip",ip).put("metric","ping"));
                             }
                         }
                         else
@@ -132,7 +231,7 @@ public class Main
             }
             catch (Exception exception)
             {
-                logger.error(exception.getMessage(),exception);
+                logger.error(exception.getMessage(), exception);
             }
         }).start();
     }

@@ -85,6 +85,11 @@ public class Util
         return outputLine;
     }
 
+//    public static Future<Boolean> readFile()
+//    {
+//
+//    }
+
     public static Future<Boolean> writeToFile(String filename, Buffer data)
     {
         Promise<Boolean> promise = Promise.promise();
@@ -159,7 +164,7 @@ public class Util
             {
                 var packetLossPercent = Integer.parseInt(packetLossMatcher.group(4));
 
-                logger.debug("Packet loss for IP [{}] is {}%.", ip, packetLossPercent);
+                logger.info("Packet loss for IP [{}] is {}%.", ip, packetLossPercent);
 
                 return packetLossPercent < 50;
             }
@@ -191,9 +196,11 @@ public class Util
         }
         catch (Exception exception)
         {
-            logger.error(exception.getMessage(),exception);
+            logger.error(exception.getMessage(), exception);
+
+            return false;
         }
 
-        return false;
+        return true;
     }
 }

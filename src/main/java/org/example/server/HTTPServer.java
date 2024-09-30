@@ -2,16 +2,13 @@ package org.example.server;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
-import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.example.Constants.ApplicationType;
-import org.example.event.EventSender;
+import org.example.event.FileManager;
 import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.HashMap;
 
 public class HTTPServer extends AbstractVerticle
 {
@@ -59,9 +56,9 @@ public class HTTPServer extends AbstractVerticle
                     {
                         applicationType = ApplicationType.valueOf(type.toUpperCase());
                     }
-                    catch (IllegalArgumentException e)
+                    catch (IllegalArgumentException exception)
                     {
-                        logger.warn("Invalid application type: {}", type);
+                        logger.warn("Invalid application type: {}", type, exception);
 
                         context.response().setStatusCode(400).end("Invalid application type");
 
@@ -70,15 +67,12 @@ public class HTTPServer extends AbstractVerticle
 
                     logger.info("Application context received: {}", requestBody);
 
-
                     if (!ApplicationContextStore.contains(applicationType))
                     {
-                        vertx.deployVerticle(new EventSender(applicationType), deployResult ->
+                        vertx.deployVerticle(new FileManager(applicationType, ip, port,pingPort), deployResult ->
                         {
                             if (deployResult.succeeded())
                             {
-                                ApplicationContextStore.setAppContext(applicationType, ip, port, pingPort);
-
                                 logger.info("EventSenderVerticle deployed successfully with deployment ID: {}", deployResult.result());
                             }
                             else

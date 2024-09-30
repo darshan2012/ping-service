@@ -3,7 +3,6 @@ package org.example.cache;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.example.Constants;
@@ -14,8 +13,7 @@ import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class FileStatusTracker
@@ -65,24 +63,42 @@ public class FileStatusTracker
         fileStatuses.putIfAbsent(fileName, ApplicationContextStore.getApplications());
     }
 
+    public static void addFile(String fileName, Set<ApplicationType> applicationTypes)
+    {
+        fileStatuses.putIfAbsent(fileName, applicationTypes);
+    }
+
     public static boolean readByAllApps(String fileName)
     {
         if (fileStatuses.containsKey(fileName))
             return fileStatuses.get(fileName).isEmpty();
 
-        return true;
+        return false;
     }
 
-    public static boolean removeFile(String fileName)
+    //returns the Queue of unread file for that application
+    public static Queue<String> getFiles(ApplicationType applicationType)
     {
-        if (readByAllApps(fileName))
+        Queue<String> unreadFiles = new LinkedList<>();
+
+        fileStatuses.forEach((fileName, appTypes) ->
+        {
+            if (appTypes.contains(applicationType))
+            {
+                unreadFiles.offer(fileName);
+            }
+        });
+
+        return unreadFiles;
+    }
+
+
+    public static void removeFile(String fileName)
+    {
+        if (fileStatuses.contains(fileName))
         {
             fileStatuses.remove(fileName);
-
-            return true;
         }
-
-        return false;
     }
 
     public static Future<Void> read()
@@ -104,7 +120,7 @@ public class FileStatusTracker
 
                     var buffer = Main.vertx.fileSystem().readFileBlocking(FILE_PATH);
 
-                    var jsonObject = new JsonObject(buffer.toString());
+                    var jsonObject = new JsonObject(buffer);
 
                     if (buffer.toString().equals("{}"))
                     {
@@ -196,7 +212,7 @@ public class FileStatusTracker
                 }
                 catch (Exception exception)
                 {
-                    logger.error(exception.getMessage(),exception);
+                    logger.error(exception.getMessage(), exception);
 
                     return Future.failedFuture(exception);
                 }

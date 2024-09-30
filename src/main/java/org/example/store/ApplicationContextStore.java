@@ -36,17 +36,27 @@ public class ApplicationContextStore
         contexts.get(applicationType).put("ip", ip).put("port", port).put("ping.port", pingPort);
     }
 
-    public static int getApplicationCount() {
+    public static int getApplicationCount()
+    {
         return contexts.size();
     }
 
-    public static boolean contains(ApplicationType applicationType){
+    public static boolean contains(ApplicationType applicationType)
+    {
         return contexts.containsKey(applicationType);
     }
 
     public static Set<ApplicationType> getApplications()
     {
         return contexts.keySet();
+    }
+
+    public static void removeApplication(ApplicationType applicationType)
+    {
+        if (contexts.containsKey(applicationType))
+        {
+            contexts.remove(applicationType);
+        }
     }
 
     public static Future<Void> write()
@@ -70,7 +80,7 @@ public class ApplicationContextStore
                 {
                     if (result.succeeded())
                     {
-                        logger.debug("Contexts successfully written to file.{} {}",FILE_PATH, context.encodePrettily());
+                        logger.info("Contexts successfully written to file.{} {}", FILE_PATH, context.encodePrettily());
 
                         future.complete();
                     }
@@ -101,56 +111,45 @@ public class ApplicationContextStore
 
             return promise.future();
         }
-        Main.vertx.executeBlocking(future ->
+
+        Main.vertx.executeBlocking(() ->
         {
-            Main.vertx.fileSystem().readFile(FILE_PATH, result ->
+            try
             {
-                try
+                var content = Main.vertx.fileSystem().readFileBlocking(FILE_PATH).toJsonObject();
+
+                contexts.clear();
+
+                for (String key : content.fieldNames())
                 {
-                    if (result.succeeded())
-                    {
-                        try
-                        {
-                            if (result.result().toString().isEmpty())
-                            {
-                                promise.complete();
-
-                                return;
-                            }
-
-                            var fileContent = result.result().toJsonObject();
-
-                            contexts.clear();
-
-                            for (String key : fileContent.fieldNames())
-                            {
-                                contexts.put(ApplicationType.valueOf(key), fileContent.getJsonObject(key));
-                            }
-
-                            logger.info("Contexts successfully read from file.");
-
-                            future.complete();
-                        }
-                        catch (Exception exception)
-                        {
-                            logger.error("Error while reading contexts from file: ", e);
-
-                            future.fail(exception);
-                        }
-                    }
-                    else
-                    {
-                        logger.error("Failed to read file: ", result.cause());
-
-                        future.fail(result.cause());
-                    }
+                    contexts.put(ApplicationType.valueOf(key), content.getJsonObject(key));
                 }
-                catch (Exception exception)
-                {
-                    logger.error("Error while reading file {}", FILE_PATH);
-                }
-            });
-        }, false, promise);
+
+                logger.info("Contexts successfully read from file {} ", FILE_PATH, content);
+
+                return Future.succeededFuture();
+            }
+            catch (Exception exception)
+            {
+                logger.error("Error while reading contexts from file: ", exception);
+
+                return Future.failedFuture(exception);
+            }
+        }).onComplete(result ->
+        {
+            if (result.succeeded())
+            {
+                promise.complete();
+
+                logger.info("{} file read successfully", FILE_PATH);
+            }
+            else
+            {
+                logger.error("Error while reading file {}", FILE_PATH, result.cause());
+
+                promise.fail(result.cause());
+            }
+        });
 
         return promise.future();
     }

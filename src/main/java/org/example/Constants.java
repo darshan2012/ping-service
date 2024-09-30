@@ -1,5 +1,8 @@
 package org.example;
 
+import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
+
 import java.io.Serializable;
 
 public class Constants
@@ -11,9 +14,27 @@ public class Constants
 
     public static final String BASE_DIR = System.getProperty("user.dir") + "/data";
 
-    public static final int FILE_STORE_INTERVAL = 60000;
+    public static final String FILE_STATUS_PATH = Constants.BASE_DIR + "/data/filestatuses.txt";
+
+    public static final Long FILE_STORE_INTERVAL = 60000L;
+
+    public static final JsonObject POLL_INTERVALS = new JsonObject().put("ping", 10000L);
 
     public static final String EVENT_NEW_FILE = "event.new.file";
+
+    public static final String EVENT_WRITE_FILE = "event.create.file";
+
+    public static final String EVENT_OPEN_FILE = "event.open.file";
+
+    public static final String EVENT_READ_FILE = "event.read.file";
+
+    public static final String EVENT_SEND = "event.send";
+
+    public static final String EVENT_CLOSE_FILE = "event.close.file";
+
+    public static final String EVENT_HEARTBEAT = "event.heartbeat";
+
+    public static final String START_POLLING = "start.polling";
 
     public static final String TEXT_FILE_REGEX = ".*\\.txt$";
 
