@@ -28,7 +28,7 @@ public class Poller extends AbstractVerticle
     @Override
     public void start()
     {
-        vertx.eventBus().<JsonObject>consumer(Constants.START_POLLING, message ->
+        vertx.eventBus().<JsonObject>localConsumer(Constants.START_POLLING, message ->
         {
             try
             {
