@@ -1,8 +1,6 @@
 package org.example.poll;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Future;
-import io.vertx.core.Promise;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.json.JsonObject;
 import org.example.Constants;
@@ -25,15 +23,18 @@ public class Poller extends AbstractVerticle
 
     private static final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
 
+    private final StringBuilder content = new StringBuilder();
+
     @Override
     public void start()
     {
-        vertx.eventBus().<JsonObject>localConsumer(Constants.START_POLLING, message ->
+        vertx.eventBus().<JsonObject>localConsumer(Constants.EVENT_OBJECT_POLL, message ->
         {
             try
             {
                 var context = message.body();
 
+                //poll objects as per their metric
                 if ("ping".equals(context.getString("metric")))
                 {
                     if (ApplicationContextStore.getApplicationCount() > 0 && context.getString("ip") != null)
@@ -65,8 +66,6 @@ public class Poller extends AbstractVerticle
 
                     if (!output.isEmpty())
                     {
-                        StringBuilder content = new StringBuilder();
-
                         String[] outputLines = output.split(Constants.NEW_LINE_CHAR);
 
                         for (String line : outputLines)
@@ -85,6 +84,8 @@ public class Poller extends AbstractVerticle
                                 .put("file.name", Constants.BASE_DIR + "/" + LocalDateTime.now()
                                         .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")) + ".txt")
                                 .put("file.content", content.toString()));
+
+                        content.setLength(0);
 
                         promise.complete();
                     }

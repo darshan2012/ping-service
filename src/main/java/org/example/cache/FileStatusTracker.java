@@ -1,7 +1,6 @@
 package org.example.cache;
 
 import io.vertx.core.Future;
-import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -41,23 +40,6 @@ public class FileStatusTracker
         }
     }
 
-    public static boolean getFileStatus(String fileName, ApplicationType applicationType)
-    {
-        try
-        {
-            if (fileStatuses.containsKey(fileName))
-            {
-                return true;
-            }
-
-            return fileStatuses.get(fileName).contains(applicationType);
-        }
-        catch (Exception exception)
-        {
-            return true;
-        }
-    }
-
     public static void addFile(String fileName)
     {
         fileStatuses.putIfAbsent(fileName, ApplicationContextStore.getApplications());
@@ -81,23 +63,26 @@ public class FileStatusTracker
     {
         Queue<String> unreadFiles = new LinkedList<>();
 
-        fileStatuses.forEach((fileName, appTypes) ->
+        fileStatuses.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach((entry) ->
         {
-            if (appTypes.contains(applicationType))
+            if (entry.getValue().contains(applicationType))
             {
-                unreadFiles.offer(fileName);
+                unreadFiles.offer(entry.getKey());
             }
         });
 
         return unreadFiles;
     }
 
-
     public static void removeFile(String fileName)
     {
-        if (fileStatuses.contains(fileName))
+        try
         {
             fileStatuses.remove(fileName);
+        }
+        catch (Exception exception)
+        {
+            logger.error(exception.getMessage(),exception);
         }
     }
 
@@ -120,13 +105,13 @@ public class FileStatusTracker
 
                     var context = new JsonObject();
 
-                    fileStatuses.forEach((fileName, appTypes) ->
+                    fileStatuses.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry ->
                     {
                         var appTypesArray = new JsonArray();
 
-                        appTypes.forEach(appType -> appTypesArray.add(appType.name()));
+                        entry.getValue().forEach(appType -> appTypesArray.add(appType.toString()));
 
-                        context.put(fileName, appTypesArray);
+                        context.put(entry.getKey(), appTypesArray);
                     });
 
                     buffer.appendString(context.encodePrettily());

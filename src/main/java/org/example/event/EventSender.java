@@ -24,12 +24,7 @@ public class EventSender extends AbstractVerticle
 
         pushSocket.connect("tcp://" + ip + ":" + port);
 
-        logger.info("conntected to tcp:// {} : {} for app {}", ip, port, applicationType);
-    }
-
-    public EventSender(ApplicationType applicationType, JsonObject context)
-    {
-        this(applicationType,context.getString("ip"),context.getInteger("port"));
+        logger.info("connected to tcp:// {} : {} for app {}", ip, port, applicationType);
     }
 
     @Override

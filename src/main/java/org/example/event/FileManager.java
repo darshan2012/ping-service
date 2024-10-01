@@ -5,17 +5,12 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import org.example.Constants;
-import org.example.Main;
 import org.example.cache.FileStatusTracker;
 import org.example.store.ApplicationContextStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.zeromq.SocketType;
-import org.zeromq.ZMQ;
 
 import java.util.ArrayDeque;
-import java.util.Collections;
-import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -28,19 +23,17 @@ public class FileManager extends AbstractVerticle
 
     private static final int MAX_EVENTS = 100; // 100 events in 5 minutes
 
-    private static final int PING_TIMEOUT = 5000;
+    private static final int PING_TIMEOUT = 10000;
 
     private final static Pattern FILE_NAME_PATTERN = Pattern.compile("[^/]+$");
 
     private final Constants.ApplicationType applicationType;
 
-    private JsonObject applicationContext;
+    private final JsonObject applicationContext;
 
     private long timeStamp = System.currentTimeMillis();
 
     private Queue<String> fileQueue = new ArrayDeque<>();
-
-    private final ZMQ.Socket pingSocket = Main.zContext.createSocket(SocketType.PULL);
 
     public FileManager(Constants.ApplicationType applicationType, String ip, int port, int pingPort)
     {
@@ -49,13 +42,13 @@ public class FileManager extends AbstractVerticle
         ApplicationContextStore.setAppContext(applicationType, ip, port, pingPort);
 
         applicationContext = ApplicationContextStore.getAppContext(applicationType);
-
-        pingSocket.connect("tcp://" + ip + ":" + port);
     }
 
-    public FileManager(Constants.ApplicationType applicationType, JsonObject applicationContext)
+    public FileManager(Constants.ApplicationType applicationType)
     {
-        this(applicationType, applicationContext.getString("ip"), applicationContext.getInteger("port"), applicationContext.getInteger("ping.port"));
+        this.applicationType = applicationType;
+
+        this.applicationContext = ApplicationContextStore.getAppContext(applicationType);
     }
 
     @Override
@@ -64,12 +57,12 @@ public class FileManager extends AbstractVerticle
         try
         {
             vertx.deployVerticle(new HeartbeatReceiver(applicationType, applicationContext.getString("ip"), applicationContext.getInteger("ping.port")))
-                    .compose(result -> vertx.deployVerticle(new EventSender(applicationType, applicationContext)))
+                    .compose(result -> vertx.deployVerticle(new EventSender(applicationType, applicationContext.getString("ip"), applicationContext.getInteger("port"))))
                     .compose(result ->
                     {
                         try
                         {
-                            vertx.eventBus().<Long>localConsumer(Constants.EVENT_HEARTBEAT, message -> timeStamp = message.body());
+                            vertx.eventBus().<Long>localConsumer(Constants.EVENT_HEARTBEAT + applicationType, message -> timeStamp = message.body());
 
                             fileQueue = FileStatusTracker.getFiles(applicationType);
 
@@ -181,7 +174,7 @@ public class FileManager extends AbstractVerticle
 
                                             if (events.get() < MAX_EVENTS && send(line))
                                             {
-                                                logger.info("sent {} aaa", line);
+                                                logger.info("sent {} {} for app {}", line, events.get(),applicationType);
 
                                                 events.incrementAndGet();
 
@@ -189,18 +182,22 @@ public class FileManager extends AbstractVerticle
                                             }
                                             else
                                             {
-                                                return;
+                                                break;
                                             }
                                         }
 
                                         if (events.get() >= MAX_EVENTS)
                                         {
+                                            logger.info("Sent 100 events to app {}", applicationType);
+
                                             send("completed");
                                         }
                                         else
                                         {
                                             if (isAlive())
                                             {
+                                                logger.info("Completed reading file {} for app {}",currentFile, applicationType);
+
                                                 send("completed");
 
                                                 FileStatusTracker.markFileAsRead(currentFile, applicationType);
@@ -210,11 +207,11 @@ public class FileManager extends AbstractVerticle
                                                     logger.info("Deleting file {}", currentFile);
 
                                                     vertx.eventBus().send(Constants.EVENT_CLOSE_FILE, currentFile);
-
                                                 }
+
                                                 fileQueue.poll();
 
-                                                if (fileQueue.peek() != null)
+                                                if (!fileQueue.isEmpty())
                                                     applicationContext.put("current.file", fileQueue.peek()).put("offset", 0);
 
                                                 processNextFile(events);
@@ -223,9 +220,14 @@ public class FileManager extends AbstractVerticle
                                     }
                                     else
                                     {
-                                        processNextFile(events);
-
                                         logger.error("{} {} Error while reading file", applicationType, currentFile);
+
+                                        if (!fileQueue.isEmpty())
+                                        {
+                                            fileQueue.poll();
+                                        }
+
+                                        processNextFile(events);
                                     }
                                 }
                                 catch (Exception exception)
@@ -272,13 +274,4 @@ public class FileManager extends AbstractVerticle
         return System.currentTimeMillis() - timeStamp <= PING_TIMEOUT;
     }
 
-    @Override
-    public void stop() throws Exception
-    {
-        if (pingSocket != null)
-        {
-            pingSocket.close();
-        }
-        super.stop();
-    }
 }

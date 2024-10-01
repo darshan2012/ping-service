@@ -1,7 +1,7 @@
 package org.example.event;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.json.JsonObject;
+import io.vertx.core.Promise;
 import org.example.Constants;
 import org.example.Main;
 import org.slf4j.Logger;
@@ -39,7 +39,7 @@ public class HeartbeatReceiver extends AbstractVerticle
 
                         if ("I am alive".equals(message))
                         {
-                            vertx.eventBus().send(Constants.EVENT_HEARTBEAT,System.currentTimeMillis());
+                            vertx.eventBus().send(Constants.EVENT_HEARTBEAT + applicationType,System.currentTimeMillis());
                         }
                         else
                         {
@@ -57,5 +57,13 @@ public class HeartbeatReceiver extends AbstractVerticle
         {
             logger.error("Error while setting up ping-pong check: ", exception);
         }
+    }
+
+    @Override
+    public void stop(Promise<Void> stopPromise) throws Exception
+    {
+        if(socket != null)
+            socket.close();
+        super.stop(stopPromise);
     }
 }

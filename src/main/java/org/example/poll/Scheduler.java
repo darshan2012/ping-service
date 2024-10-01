@@ -29,15 +29,26 @@ public class Scheduler extends AbstractVerticle
             EventBus eventBus = vertx.eventBus();
 
             eventBus.<JsonObject>localConsumer(Constants.OBJECT_PROVISION, message ->
-                    objects.add(message.body()
-                            .put("next.poll.time", Instant.now().plus(Constants.POLL_INTERVALS.getLong(message.body().getString("metric")), TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()))
+                    {
+                        try
+                        {
+                            objects.add(message.body()
+                                    .put("next.poll.time", Instant.now().plus(Constants.POLL_INTERVALS.getLong(message.body().getString("metric")), TimeUnit.MILLISECONDS.toChronoUnit()).toEpochMilli()));
+
+                            logger.info("object added for provision {}", message.body());
+                        }
+                        catch (Exception exception)
+                        {
+                            logger.error(exception.getMessage(),exception);
+                        }
+                    }
             );
 
             schedule();
         }
         catch (Exception exception)
         {
-            logger.error(exception.getMessage(),exception);
+            logger.error(exception.getMessage(), exception);
         }
     }
 
@@ -47,11 +58,11 @@ public class Scheduler extends AbstractVerticle
         {
             try
             {
-                while (!objects.isEmpty() && objects.peek().getLong("next.poll.time") <= Instant.now().getEpochSecond())
+                while (!objects.isEmpty() && objects.peek().getLong("next.poll.time") <= Instant.now().toEpochMilli())
                 {
                     lastPolledObjects.add(objects.peek());
 
-                    vertx.eventBus().send(Constants.START_POLLING, objects.poll());
+                    vertx.eventBus().send(Constants.EVENT_OBJECT_POLL, objects.poll());
                 }
 
                 if (!lastPolledObjects.isEmpty())
@@ -59,7 +70,8 @@ public class Scheduler extends AbstractVerticle
                     for (var object : lastPolledObjects)
                     {
                         object.put("next.poll.time", Instant.now()
-                                .plus(Constants.POLL_INTERVALS.getLong(object.getString("metric")), TimeUnit.SECONDS.toChronoUnit()).toEpochMilli());
+                                .plus(Constants.POLL_INTERVALS.getLong(object.getString("metric")), TimeUnit.MILLISECONDS.toChronoUnit())
+                                .toEpochMilli());
 
                         objects.add(object);
                     }

@@ -11,7 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Optional;
 
 
 public class FileService extends AbstractVerticle
@@ -46,15 +49,20 @@ public class FileService extends AbstractVerticle
             {
                 if (!timers.isEmpty())
                 {
+                    List<String> filesToClose = new ArrayList<>();
+
                     timers.forEach((filename, time) ->
                     {
                         if (Instant.now().toEpochMilli() - time >= FILE_OPEN_TIMEOUT)
                         {
-                            close(filename);
+                            filesToClose.add(filename);
                         }
                     });
+
+                    filesToClose.forEach(this::close);
                 }
             });
+
         }
         catch (Exception exception)
         {
@@ -66,49 +74,103 @@ public class FileService extends AbstractVerticle
     {
         try
         {
-            logger.info("closing file {} ", fileName);
+            logger.info("Closing file {}...", fileName);
 
             if (files.containsKey(fileName) && files.get(fileName) != null)
             {
-                files.get(fileName).close().onComplete(result ->
-                {
-                    if (result.succeeded())
-                    {
-                        vertx.fileSystem().delete(fileName).onComplete(deleteResult ->
+                files.get(fileName).close()
+                        .compose(closeResult ->
                         {
-                            try
-                            {
-                                if (deleteResult.succeeded())
-                                {
-                                    FileStatusTracker.removeFile(fileName);
+                            logger.info("File {} closed successfully.", fileName);
 
-                                    files.remove(fileName);
+                            // After closing, delete the file
+                            return vertx.fileSystem().delete(fileName);
+                        })
+                        .onSuccess(deleteResult ->
+                        {
+                            logger.info("File {} deleted successfully.", fileName);
 
-                                    timers.remove(fileName);
+                            // Clean up maps after successful delete
+                            FileStatusTracker.removeFile(fileName);
 
-                                    logger.info("file {} deleted.", fileName);
-                                }
-                                else
-                                {
-                                    logger.info("Error in deleting file {}", fileName, deleteResult.cause());
-                                }
-                            }
-                            catch (Exception exception)
-                            {
-                                logger.error(exception.getMessage(),exception);
-                            }
+                            files.remove(fileName);
+
+                            timers.remove(fileName);
+
+                        })
+                        .onFailure(error ->
+                        {
+                            // Handle failure either in closing or deleting the file
+                            logger.error("Error in closing or deleting file {}: {}", fileName, error.getMessage(), error);
                         });
-                    }
-                });
             }
-            else if (timers.containsKey(fileName))
+            else
+            {
+                // If the file isn't found, just remove the timer entry
                 timers.remove(fileName);
+            }
+
         }
         catch (Exception exception)
         {
-            logger.error("Error while closing the file {} ", fileName, exception);
+            logger.error("Error while closing the file {}: {}", fileName, exception.getMessage(), exception);
         }
     }
+
+
+//    private void close(String fileName)
+//    {
+//        try
+//        {
+//            logger.info("closing file {} ", fileName);
+//
+//            if (files.containsKey(fileName) && files.get(fileName) != null)
+//            {
+//                files.get(fileName).close().onComplete(result ->
+//                {
+//                    if (result.succeeded())
+//                    {
+//                        logger.info("Closed file {}", fileName);
+//
+//                        vertx.fileSystem().delete(fileName).onComplete(deleteResult ->
+//                        {
+//                            try
+//                            {
+//                                if (deleteResult.succeeded())
+//                                {
+//                                    FileStatusTracker.removeFile(fileName);
+//
+//                                    files.remove(fileName);
+//
+//                                    timers.remove(fileName);
+//
+//                                    logger.info("file {} deleted.", fileName);
+//                                }
+//                                else
+//                                {
+//                                    logger.info("Error in deleting file {}", fileName, deleteResult.cause());
+//                                }
+//                            }
+//                            catch (Exception exception)
+//                            {
+//                                logger.error(exception.getMessage(), exception);
+//                            }
+//                        });
+//                    }
+//                    else
+//                    {
+//                        logger.error("Error in closing file {} ", fileName, result.cause());
+//                    }
+//                });
+//            }
+//            else
+//                timers.remove(fileName);
+//        }
+//        catch (Exception exception)
+//        {
+//            logger.error("Error while closing the file {} ", fileName, exception);
+//        }
+//    }
 
     public void write(JsonObject context)
     {
@@ -283,7 +345,7 @@ public class FileService extends AbstractVerticle
             }
 
             vertx.fileSystem()
-                    .open(fileName, new OpenOptions().setAppend(true).setCreate(true).setRead(true).setWrite(true))
+                    .open(fileName, new OpenOptions().setAppend(true).setRead(true).setWrite(true))
                     .onComplete(openFile ->
                     {
                         try

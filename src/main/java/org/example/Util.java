@@ -42,7 +42,7 @@ public class Util
     {
         Process process = null;
 
-        String outputLine = "";
+        String outputLine;
 
         try
         {
@@ -84,11 +84,6 @@ public class Util
 
         return outputLine;
     }
-
-//    public static Future<Boolean> readFile()
-//    {
-//
-//    }
 
     public static Future<Boolean> writeToFile(String filename, Buffer data)
     {

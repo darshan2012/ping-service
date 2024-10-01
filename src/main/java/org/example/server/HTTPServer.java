@@ -73,11 +73,11 @@ public class HTTPServer extends AbstractVerticle
                         {
                             if (deployResult.succeeded())
                             {
-                                logger.info("EventSenderVerticle deployed successfully with deployment ID: {}", deployResult.result());
+                                logger.info("FileManager deployed successfully with deployment ID: {}", deployResult.result());
                             }
                             else
                             {
-                                logger.error("Failed to deploy EventSenderVerticle", deployResult.cause());
+                                logger.error("Failed to deploy FileManager", deployResult.cause());
 
                                 context.response().setStatusCode(500).end("Internal Server Error");
                             }
@@ -100,7 +100,7 @@ public class HTTPServer extends AbstractVerticle
             {
                 if (http.succeeded())
                 {
-                    logger.info("HTTP server started successfully on port " + http.result().actualPort());
+                    logger.info("HTTP server started successfully on port {}", http.result().actualPort());
 
                     startPromise.complete();
                 }

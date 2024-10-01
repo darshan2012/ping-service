@@ -12,6 +12,11 @@
         <appender-ref ref="FILE" />
     </logger>
 
+    <root level="ERROR">
+        <appender-ref ref="ERROR_FILE" />
+    </root>
+
+
 
     <!-- File appender to store logs in a file with rotation -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
@@ -19,6 +24,17 @@
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/application.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory> <!-- Keep logs for 30 days -->
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/error.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/error.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory> <!-- Keep error logs for 30 days -->
         </rollingPolicy>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>

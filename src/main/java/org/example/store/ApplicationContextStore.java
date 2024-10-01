@@ -51,19 +51,9 @@ public class ApplicationContextStore
         return contexts.keySet();
     }
 
-    public static void removeApplication(ApplicationType applicationType)
+    public static void write()
     {
-        if (contexts.containsKey(applicationType))
-        {
-            contexts.remove(applicationType);
-        }
-    }
-
-    public static Future<Void> write()
-    {
-        Promise<Void> promise = Promise.promise();
-
-        Main.vertx.executeBlocking(future ->
+        Main.vertx.executeBlocking(() ->
         {
             try
             {
@@ -76,29 +66,19 @@ public class ApplicationContextStore
                     context.put(entry.getKey().toString(), entry.getValue());
                 }
 
-                Main.vertx.fileSystem().writeFile(FILE_PATH, Buffer.buffer(context.encodePrettily()), result ->
-                {
-                    if (result.succeeded())
-                    {
-                        logger.info("Contexts successfully written to file.{} {}", FILE_PATH, context.encodePrettily());
+                Main.vertx.fileSystem().writeFileBlocking(FILE_PATH, Buffer.buffer(context.encodePrettily()));
 
-                        future.complete();
-                    }
-                    else
-                    {
-                        logger.error("Failed to write contexts to file: ", result.cause());
+                logger.info("Contexts successfully written to file.{} {}", FILE_PATH, context.encode());
 
-                        future.fail(result.cause());
-                    }
-                });
+                return Future.succeededFuture();
             }
             catch (Exception exception)
             {
-                future.fail(exception);
-            }
-        }, false, promise);
+                logger.error(exception.getMessage(),exception);
 
-        return promise.future();
+                return Future.failedFuture(exception);
+            }
+        });
     }
 
     public static Future<Void> read()
@@ -125,7 +105,7 @@ public class ApplicationContextStore
                     contexts.put(ApplicationType.valueOf(key), content.getJsonObject(key));
                 }
 
-                logger.info("Contexts successfully read from file {} ", FILE_PATH, content);
+                logger.info("Contexts successfully read from file {} {}", FILE_PATH, content);
 
                 return Future.succeededFuture();
             }

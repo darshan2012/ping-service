@@ -44,20 +44,18 @@ public class Main
 
                         if (!applications.isEmpty())
                         {
-                            applications.forEach(application ->
-                            {
-                                vertx.deployVerticle(new FileManager(application, ApplicationContextStore.getAppContext(application)), deployResult ->
-                                {
-                                    if (deployResult.succeeded())
+                            applications.forEach(application -> vertx.deployVerticle(new FileManager(application), deployResult ->
                                     {
-                                        logger.info("file manager deployed successfully with deployment ID: {}", deployResult.result());
-                                    }
-                                    else
-                                    {
-                                        logger.error("Failed to deploy file manager", deployResult.cause());
-                                    }
-                                });
-                            });
+                                        if (deployResult.succeeded())
+                                        {
+                                            logger.info("file manager deployed successfully with deployment ID: {} for app {}", deployResult.result(),application);
+                                        }
+                                        else
+                                        {
+                                            logger.error("Failed to deploy file manager for app {}",application, deployResult.cause());
+                                        }
+                                    })
+                            );
                         }
 
                         return Future.succeededFuture();
@@ -114,14 +112,14 @@ public class Main
 
                     var buffer = Main.vertx.fileSystem().readFileBlocking(Constants.FILE_STATUS_PATH);
 
-                    var jsonObject = new JsonObject(buffer);
+                    var lines = new JsonObject(buffer);
 
                     if (buffer.toString().equals("{}"))
                     {
                         return Future.succeededFuture();
                     }
 
-                    jsonObject.forEach(entry ->
+                    lines.forEach(entry ->
                     {
                         try
                         {
@@ -131,15 +129,17 @@ public class Main
                                     app -> appTypes.add(Constants.ApplicationType.valueOf((String) app))
                             );
 
-                            FileStatusTracker.addFile(entry.getKey(), appTypes);
+                            if(!appTypes.isEmpty())
+                            {
+                                FileStatusTracker.addFile(entry.getKey(), appTypes);
 
-                            logger.info("File loading {} ", entry.getKey());
-
-                            vertx.eventBus().send(Constants.EVENT_OPEN_FILE,new JsonObject().put("file.name",entry.getKey()));
+                                vertx.eventBus()
+                                        .send(Constants.EVENT_OPEN_FILE, new JsonObject().put("file.name", entry.getKey()));
+                            }
                         }
                         catch (Exception exception)
                         {
-                            logger.error("Error while setting up file {}",entry.getKey());
+                            logger.error("Error while setting up file {}", entry.getKey());
                         }
                     });
 
@@ -215,7 +215,9 @@ public class Main
                             {
                                 System.out.println("Provisioning started for IP: " + ip);
 
-                                Main.vertx.eventBus().send(Constants.OBJECT_PROVISION, new JsonObject().put("ip",ip).put("metric","ping"));
+                                Main.vertx.eventBus()
+                                        .send(Constants.OBJECT_PROVISION, new JsonObject().put("ip", ip)
+                                                .put("metric", "ping"));
                             }
                         }
                         else

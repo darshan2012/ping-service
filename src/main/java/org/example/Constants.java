@@ -1,6 +1,5 @@
 package org.example;
 
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 
 import java.io.Serializable;
@@ -34,9 +33,7 @@ public class Constants
 
     public static final String EVENT_HEARTBEAT = "event.heartbeat";
 
-    public static final String START_POLLING = "start.polling";
-
-    public static final String TEXT_FILE_REGEX = ".*\\.txt$";
+    public static final String EVENT_OBJECT_POLL = "start.polling";
 
     public final static String NEW_LINE_CHAR = "\n";
 
