@@ -38,4 +38,8 @@ public class Constants
     public final static String NEW_LINE_CHAR = "\n";
 
     public static final String OBJECT_PROVISION = "object.provision";
+
+    public static final String IP = "127.0.0.1";
+
+    public static final Long PORT = 3456L;
 }

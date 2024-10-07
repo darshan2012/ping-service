@@ -29,11 +29,11 @@ public class ApplicationContextStore
         return contexts.get(applicationType);
     }
 
-    public static void setAppContext(ApplicationType applicationType, String ip, int port, int pingPort)
+    public static void setAppContext(ApplicationType applicationType, String ip, int pingPort)
     {
         contexts.putIfAbsent(applicationType, new JsonObject());
 
-        contexts.get(applicationType).put("ip", ip).put("port", port).put("ping.port", pingPort);
+        contexts.get(applicationType).put("ip", ip).put("ping.port", pingPort);
     }
 
     public static int getApplicationCount()

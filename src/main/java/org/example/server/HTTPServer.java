@@ -1,9 +1,12 @@
 package org.example.server;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Context;
 import io.vertx.core.Promise;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import org.example.Constants;
 import org.example.Constants.ApplicationType;
 import org.example.event.FileManager;
 import org.example.store.ApplicationContextStore;
@@ -35,13 +38,11 @@ public class HTTPServer extends AbstractVerticle
 
                     var ip = requestBody.getString("ip");
 
-                    var port = requestBody.getInteger("port");
-
                     var type = requestBody.getString("type");
 
                     var pingPort = requestBody.getInteger("ping.port");
 
-                    if (ip == null || port == null || type == null || pingPort == null)
+                    if (ip == null || type == null || pingPort == null)
                     {
                         logger.warn("Invalid application context: {}", requestBody);
 
@@ -69,7 +70,7 @@ public class HTTPServer extends AbstractVerticle
 
                     if (!ApplicationContextStore.contains(applicationType))
                     {
-                        vertx.deployVerticle(new FileManager(applicationType, ip, port,pingPort), deployResult ->
+                        vertx.deployVerticle(new FileManager(applicationType, ip,pingPort), deployResult ->
                         {
                             if (deployResult.succeeded())
                             {
@@ -84,7 +85,7 @@ public class HTTPServer extends AbstractVerticle
                         });
                     }
 
-                    context.response().setStatusCode(200).end("Context set successfully, app will start sending data");
+                    context.response().setStatusCode(200).end(new JsonObject().put("port", Constants.PORT).put("ip",Constants.IP).encode());
 
                     logger.info("Response sent: Context set successfully");
                 }

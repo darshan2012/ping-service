@@ -1,6 +1,7 @@
 package org.example.poll;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.json.JsonObject;
 import org.example.Constants;
@@ -21,7 +22,7 @@ public class Poller extends AbstractVerticle
 
     private static final int NO_OF_PACKETS = 5;
 
-    private static final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("ping-executor", 10, 2, TimeUnit.MINUTES);
+    private static final WorkerExecutor executor = Main.vertx.createSharedWorkerExecutor("object-poll-executor", 10, 2, TimeUnit.MINUTES);
 
     private final StringBuilder content = new StringBuilder();
 
@@ -58,7 +59,7 @@ public class Poller extends AbstractVerticle
     {
         try
         {
-            executor.executeBlocking(promise ->
+            executor.executeBlocking(() ->
             {
                 try
                 {
@@ -87,18 +88,18 @@ public class Poller extends AbstractVerticle
 
                         content.setLength(0);
 
-                        promise.complete();
+                        return Future.succeededFuture();
                     }
                     else
                     {
-                        promise.fail("Ping output is empty for IP: " + ip);
+                        return Future.failedFuture("Ping output is empty for IP: " + ip);
                     }
                 }
                 catch (Exception exception)
                 {
                     logger.error("Error during ping execution for IP: {}", ip, exception);
 
-                    promise.fail(exception);
+                    return Future.failedFuture(exception);
                 }
             });
         }
@@ -118,6 +119,7 @@ public class Poller extends AbstractVerticle
             {
                 JsonObject result = new JsonObject()
                         .put("IP", packetMatcher.group(1))
+                        .put("timestamp",LocalDateTime.now().toString())
                         .put("Packets transmitted", packetMatcher.group(2))
                         .put("Packets received", packetMatcher.group(3))
                         .put("Packet loss", packetMatcher.group(4))

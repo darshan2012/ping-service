@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -197,5 +198,26 @@ public class Util
         }
 
         return true;
+    }
+
+    public static Future<Boolean> isFileCreatedAtLeastNMinutesAgo(String fileName, int minutes)
+    {
+        Promise<Boolean> promise = Promise.promise();
+
+        Main.vertx.fileSystem().props(fileName, result ->
+        {
+            if (result.succeeded())
+            {
+                long creationTime = result.result().creationTime();
+
+                promise.complete(Instant.now().isAfter(Instant.ofEpochMilli(creationTime).plus(minutes, TimeUnit.MINUTES.toChronoUnit())));
+            }
+            else
+            {
+                promise.fail(result.cause()); // Handle the failure
+            }
+        });
+
+        return promise.future();
     }
 }

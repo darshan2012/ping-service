@@ -27,7 +27,7 @@ public class FileService extends AbstractVerticle
 
     private static final Long TIMER_CHECK_INTERVAL = 60000L;
 
-    private static final Long FILE_OPEN_TIMEOUT = 60000L * 60;
+    private static final Long FILE_OPEN_TIMEOUT = 60000L * 6;
 
     @Override
     public void start()
@@ -49,17 +49,13 @@ public class FileService extends AbstractVerticle
             {
                 if (!timers.isEmpty())
                 {
-                    List<String> filesToClose = new ArrayList<>();
-
                     timers.forEach((filename, time) ->
                     {
                         if (Instant.now().toEpochMilli() - time >= FILE_OPEN_TIMEOUT)
                         {
-                            filesToClose.add(filename);
+                            close(filename);
                         }
                     });
-
-                    filesToClose.forEach(this::close);
                 }
             });
 
@@ -116,61 +112,6 @@ public class FileService extends AbstractVerticle
             logger.error("Error while closing the file {}: {}", fileName, exception.getMessage(), exception);
         }
     }
-
-
-//    private void close(String fileName)
-//    {
-//        try
-//        {
-//            logger.info("closing file {} ", fileName);
-//
-//            if (files.containsKey(fileName) && files.get(fileName) != null)
-//            {
-//                files.get(fileName).close().onComplete(result ->
-//                {
-//                    if (result.succeeded())
-//                    {
-//                        logger.info("Closed file {}", fileName);
-//
-//                        vertx.fileSystem().delete(fileName).onComplete(deleteResult ->
-//                        {
-//                            try
-//                            {
-//                                if (deleteResult.succeeded())
-//                                {
-//                                    FileStatusTracker.removeFile(fileName);
-//
-//                                    files.remove(fileName);
-//
-//                                    timers.remove(fileName);
-//
-//                                    logger.info("file {} deleted.", fileName);
-//                                }
-//                                else
-//                                {
-//                                    logger.info("Error in deleting file {}", fileName, deleteResult.cause());
-//                                }
-//                            }
-//                            catch (Exception exception)
-//                            {
-//                                logger.error(exception.getMessage(), exception);
-//                            }
-//                        });
-//                    }
-//                    else
-//                    {
-//                        logger.error("Error in closing file {} ", fileName, result.cause());
-//                    }
-//                });
-//            }
-//            else
-//                timers.remove(fileName);
-//        }
-//        catch (Exception exception)
-//        {
-//            logger.error("Error while closing the file {} ", fileName, exception);
-//        }
-//    }
 
     public void write(JsonObject context)
     {
@@ -357,8 +298,6 @@ public class FileService extends AbstractVerticle
                                 files.put(fileName, file);
 
                                 timers.put(fileName, Instant.now().toEpochMilli());
-
-                                FileStatusTracker.addFile(fileName);
 
                                 logger.info("File {} opened successfully.", fileName);
                             }

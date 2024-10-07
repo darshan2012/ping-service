@@ -55,7 +55,7 @@ public class HeartbeatReceiver extends AbstractVerticle
         }
         catch (Exception exception)
         {
-            logger.error("Error while setting up ping-pong check: ", exception);
+            logger.error("Error while setting up heartbeat check: ", exception);
         }
     }
 
@@ -64,6 +64,7 @@ public class HeartbeatReceiver extends AbstractVerticle
     {
         if(socket != null)
             socket.close();
+
         super.stop(stopPromise);
     }
 }

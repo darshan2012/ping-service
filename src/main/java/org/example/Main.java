@@ -3,6 +3,7 @@ package org.example;
 import io.vertx.core.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.example.event.EventSender;
 import org.example.event.FileManager;
 import org.example.event.FileService;
 import org.example.poll.Poller;
@@ -37,6 +38,7 @@ public class Main
             ApplicationContextStore.read()
                     .compose(result -> vertx.deployVerticle(new FileService(), new DeploymentOptions().setThreadingModel(ThreadingModel.WORKER)))
                     .compose(result -> loadFiles())
+                    .compose(result -> vertx.deployVerticle(new EventSender(Constants.IP, Constants.PORT)))
                     .compose(result -> vertx.deployVerticle(new HTTPServer()))
                     .compose(result ->
                     {

@@ -1,8 +1,6 @@
 package org.example.event;
 
-import org.example.Constants.ApplicationType;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.json.JsonObject;
 import org.example.Constants;
 import org.example.Main;
 import org.slf4j.Logger;
@@ -14,17 +12,13 @@ public class EventSender extends AbstractVerticle
 {
     private static final Logger logger = LoggerFactory.getLogger(EventSender.class);
 
-    private final ApplicationType applicationType;
+    private final ZMQ.Socket pushSocket = Main.zContext.createSocket(SocketType.PUB);
 
-    private final ZMQ.Socket pushSocket = Main.zContext.createSocket(SocketType.PUSH);
-
-    public EventSender(ApplicationType applicationType, String ip, int port)
+    public EventSender(String ip, Long port)
     {
-        this.applicationType = applicationType;
+        pushSocket.bind("tcp://" + ip + ":" + port);
 
-        pushSocket.connect("tcp://" + ip + ":" + port);
-
-        logger.info("connected to tcp:// {} : {} for app {}", ip, port, applicationType);
+        logger.info("bind to tcp:// {} : {}", ip, port);
     }
 
     @Override
@@ -32,7 +26,7 @@ public class EventSender extends AbstractVerticle
     {
         try
         {
-            vertx.eventBus().<String>localConsumer(Constants.EVENT_SEND + applicationType, message -> pushSocket.send(message.body()));
+            vertx.eventBus().<String>localConsumer(Constants.EVENT_SEND, message -> pushSocket.send(message.body()));
         }
         catch (Exception exception)
         {
